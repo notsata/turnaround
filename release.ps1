@@ -33,7 +33,7 @@ Compress-Archive -Path $stage -DestinationPath $zip
 Remove-Item $stage -Recurse -Force
 
 Write-Host "Publishing..."
-git -C $root add ProjectSettings/ProjectSettings.asset
+git -C $root add ProjectSettings/ProjectSettings.asset Builds/Windows # the repo always carries the playable build too
 git -C $root diff --cached --quiet
 if ($LASTEXITCODE -ne 0) { git -C $root commit -m "Release v$Version" | Out-Null }
 git -C $root tag "v$Version"

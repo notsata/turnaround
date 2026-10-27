@@ -4,7 +4,10 @@ Logs/
 obj/
 UserSettings/
 *.log
-Builds/
+# The playable build is committed; staging folders, zips and Unity debug info are not.
+Builds/TURNAROUND/
+Builds/*.zip
+Builds/**/*_DoNotShip/
 *.csproj
 *.sln
 .vs/
