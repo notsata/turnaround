@@ -12,7 +12,7 @@ namespace Turnaround.Core
     // hands over to a small PowerShell script that waits for the game to close, copies the new files in and relaunches.
     public class Updater : MonoBehaviour
     {
-        public const string Repo = "OWNER/turnaround"; // set by release.ps1 to the real GitHub repo
+        public const string Repo = "notsata/turnaround"; // public: friends download releases without logging in
         const string AssetName = "TURNAROUND.zip";
 
         public enum State { Idle, Checking, UpToDate, Downloading, Ready, Failed }
