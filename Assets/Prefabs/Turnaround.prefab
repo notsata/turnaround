@@ -1,0 +1,209 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &7213780198880338992
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6997761490251537026}
+  - component: {fileID: 7941152335485889003}
+  - component: {fileID: 1595895060729137046}
+  - component: {fileID: 8822482629869323938}
+  - component: {fileID: 540900825245329912}
+  - component: {fileID: 7880938898085941657}
+  - component: {fileID: 3936311805439627518}
+  - component: {fileID: 5293443065697898406}
+  m_Layer: 0
+  m_Name: Turnaround
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6997761490251537026
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7213780198880338992}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &7941152335485889003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7213780198880338992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 3679424538
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  m_InScenePlacedDisabledByDefault: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  m_InScenePlaced: 0
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &1595895060729137046
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7213780198880338992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dcac6d7c67eaeb64ca93ae07b0153cf0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Turnaround.Tasks.TurnaroundManager
+  ShowTopMostFoldoutHeaderGroup: 1
+  flight: {fileID: 11400000, guid: 86431abe11d88ac46a28c81d5eccecc3, type: 2}
+--- !u!114 &8822482629869323938
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7213780198880338992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9045de6de26dc834c95afaed0a571265, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Turnaround.Tasks.TaskManager
+  ShowTopMostFoldoutHeaderGroup: 1
+  tasks:
+  - {fileID: 11400000, guid: d65b7e3f766aeb24dbfc211e7d3833bc, type: 2}
+  - {fileID: 11400000, guid: e80224d864cb5724b886de3c9b733876, type: 2}
+  - {fileID: 11400000, guid: cd377ef6b40b682469e02220d06787dd, type: 2}
+  - {fileID: 11400000, guid: 4dcd25e784b4b7f47a323b33b4eabbec, type: 2}
+  - {fileID: 11400000, guid: d74cbd33a71dbe34fa803e9ca9cd8014, type: 2}
+  - {fileID: 11400000, guid: 5ab0e59ccdddcf7419cf567717579a79, type: 2}
+  - {fileID: 11400000, guid: d7a0e8896dbe2e049aaec098a260b616, type: 2}
+  - {fileID: 11400000, guid: 1c3970c27a3d0da43bbeea45f341a780, type: 2}
+  - {fileID: 11400000, guid: 993c64b2bd3c3a54ba4ae5d5ae29b04c, type: 2}
+  - {fileID: 11400000, guid: 076a5885a06eefa478a983aed43eff0d, type: 2}
+  - {fileID: 11400000, guid: 78a55887f5e99d84993ab9a307ea5375, type: 2}
+  - {fileID: 11400000, guid: 872cbb23bba6c17438da28dcffd3445a, type: 2}
+  - {fileID: 11400000, guid: 034c85f4e6622864097be67d728d7207, type: 2}
+  - {fileID: 11400000, guid: 89b60f34aecb424478c05f05ce9f39dc, type: 2}
+  - {fileID: 11400000, guid: 6e023e44975863d45aeece7954f7a5ff, type: 2}
+  - {fileID: 11400000, guid: b6314ed4addf8ef46ad7808b42c8d114, type: 2}
+--- !u!114 &540900825245329912
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7213780198880338992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 49ab7a53622a9334eb931dd80c7066a7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Turnaround.Events.RadioManager
+  ShowTopMostFoldoutHeaderGroup: 1
+  chatterInterval: 75
+--- !u!114 &7880938898085941657
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7213780198880338992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b7b94a8456652fb4a906afa0a5785f3f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Turnaround.Events.SafetyViolationManager
+  ShowTopMostFoldoutHeaderGroup: 1
+  cooldown: 15
+  laneMinZ: 2.5
+  laneMaxZ: 7.5
+  speedingLimit: 6
+--- !u!114 &3936311805439627518
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7213780198880338992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 39bc66c519b7783418bfadf1d734ba76, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Turnaround.Events.RandomEventManager
+  ShowTopMostFoldoutHeaderGroup: 1
+  events:
+  - {fileID: 11400000, guid: e1c5f4e5a80bb3548a925119bbbb4dbd, type: 2}
+  - {fileID: 11400000, guid: ef299fb9df1ad264f98bfebb557162c4, type: 2}
+  - {fileID: 11400000, guid: 873852a1307dc2f46b0ca159989a39c6, type: 2}
+  - {fileID: 11400000, guid: fbd214f979b04234780d43997e151ca5, type: 2}
+  - {fileID: 11400000, guid: 83d537e54e349c14ba8f5764c62eed26, type: 2}
+  - {fileID: 11400000, guid: 68222b4a9de4baa46891d79705f92d07, type: 2}
+  - {fileID: 11400000, guid: 0393f5211ea902b4981e4592ed823043, type: 2}
+  - {fileID: 11400000, guid: 229d9646fc216d04da7eb6ad693ed74d, type: 2}
+  - {fileID: 11400000, guid: 95934475b90ba9b4394810c05ed3f8f1, type: 2}
+  minEvents: 1
+  maxEvents: 2
+  lightningSeconds: 30
+  fuelDelaySeconds: 60
+--- !u!114 &5293443065697898406
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7213780198880338992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 497315352fea66e4dab1355fcef93914, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Turnaround.Company.CompanyManager
+  ShowTopMostFoldoutHeaderGroup: 1
+  contracts:
+  - {fileID: 11400000, guid: 60ad8003f14f8154bb02511fa7013a85, type: 2}
+  - {fileID: 11400000, guid: 5770ca7d1b00546479f821e52b00527b, type: 2}
+  - {fileID: 11400000, guid: 52b89e48207a0a44ea6a096d00facd26, type: 2}
+  equipment:
+  - {fileID: 11400000, guid: 2aa0b5b3fd9cffd469a73c1e043a26c8, type: 2}
+  - {fileID: 11400000, guid: 21e91edcc26023b4b85d1c7a6e54d6f5, type: 2}
+  - {fileID: 11400000, guid: 10e00951ccd82a84ab50c52fd8d34e31, type: 2}
+  - {fileID: 11400000, guid: 42ebbcef32f42564a8f4fd6bf0f68e67, type: 2}
+  - {fileID: 11400000, guid: 010ddceaf997774489b18eb826014189, type: 2}
+  - {fileID: 11400000, guid: 1bcf41e316480644da42e4b51590bbc2, type: 2}
+  - {fileID: 11400000, guid: 99b9ed103d14f054cac6746b529d14d0, type: 2}
+  - {fileID: 11400000, guid: f663cb43664d453419fb17b28f005cf7, type: 2}
+  - {fileID: 11400000, guid: 2dcbd21caa273114a95f4e3b45020171, type: 2}
+  - {fileID: 11400000, guid: 4aea66a0e4e1a404ea0075e7cbad9228, type: 2}
+  upgrades:
+  - {fileID: 11400000, guid: 345a1fa9ab860194693ad8b237c62bff, type: 2}
+  - {fileID: 11400000, guid: 857c00a6427f8634ebd88541c2359336, type: 2}
+  - {fileID: 11400000, guid: 82bd1039822686749b98d5af3bfef418, type: 2}
+  - {fileID: 11400000, guid: 991f6f399884cfb4b9a6d383b512f447, type: 2}
+  cartPrefab: {fileID: 6176781046782366536, guid: 587215a826bfd364da314acd3fd48175, type: 3}
+  extraCartSpots:
+  - {x: -46, y: 0.1, z: 10.5}
+  - {x: -42, y: 0.1, z: 10.5}
+  - {x: -38, y: 0.1, z: 10.5}
+  dailyOverhead: 800
+  maxExtraCarts: 3
