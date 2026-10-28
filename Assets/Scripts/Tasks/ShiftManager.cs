@@ -29,6 +29,7 @@ namespace Turnaround.Tasks
         public void ServerStartShift()
         {
             if (!IsServer || started.Value) return;
+            RunReset.ServerSnapshot();
             started.Value = true;
             StartShiftRpc();
             RadioManager.Say("OPS", "Shift's started. Everyone on the ramp. Try to look like professionals.");
@@ -46,6 +47,7 @@ namespace Turnaround.Tasks
         void StartShiftRpc()
         {
             FlashUntil = Time.time + 0.6f;
+            if (StartShiftButton.Instance != null) StartShiftButton.Instance.Press();
             AudioSource.PlayClipAtPoint(Buzzer(), Camera.main != null ? Camera.main.transform.position : Vector3.zero, 1f);
             if (PlayerController.Local != null) StartCoroutine(MoveAfterBuzz(PlayerController.Local));
         }
@@ -59,7 +61,11 @@ namespace Turnaround.Tasks
         [Rpc(SendTo.Everyone)]
         void MoveEveryoneRpc(bool lobby)
         {
-            if (PlayerController.Local != null) PlayerController.Local.GoToSpawn(lobby);
+            var local = PlayerController.Local;
+            if (local == null) return;
+            var ragdoll = local.GetComponent<PlayerRagdoll>();
+            if (ragdoll.HasBody) ragdoll.ForceEnd();
+            local.GoToSpawn(lobby);
         }
 
         // Game-show buzzer: two detuned square waves with a hard stop, so there's no audio asset to ship.

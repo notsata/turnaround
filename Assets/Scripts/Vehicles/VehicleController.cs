@@ -184,6 +184,8 @@ namespace Turnaround.Vehicles
             if (IsServer && HasDriver) ClearDriver();
         }
 
+        public void ServerClearFaults() => stalled.Value = false;
+
         void OnCollisionEnter(Collision collision)
         {
             if (IsServer && IsSpawned) Events.ImpactRules.VehicleHit(collision, transform, displayName, NetworkObjectId, kind);

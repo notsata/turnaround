@@ -66,6 +66,7 @@ namespace Turnaround.Tasks
         void Update()
         {
             if (!IsServer || !IsSpawned || Aircraft == null) return;
+            if (ShiftManager.InLobby) { Aircraft.HoldArrival = true; return; } // nothing flies until the host presses START
             if (!flightAssigned && Time.time >= nextAssignTry) AssignFlight();
             var state = Aircraft.State;
             double now = NetworkManager.ServerTime.Time;
@@ -105,6 +106,13 @@ namespace Turnaround.Tasks
         public void ServerStartNextFlight()
         {
             if (!IsServer || Aircraft == null || Aircraft.State != AircraftState.Gone) return;
+            ServerResetRun();
+        }
+
+        // Next flight, or bankruptcy (any state): every per-flight thing back to the start.
+        public void ServerResetRun()
+        {
+            if (!IsServer || Aircraft == null) return;
             BaggageManager.Instance?.ServerReset();
             TaskManager.Instance?.ServerReset();
             SafetyViolationManager.Instance?.ServerReset();
@@ -116,7 +124,7 @@ namespace Turnaround.Tasks
             offBlockAt.Value = -1;
             report.Value = default;
             flightAssigned = false;
-            AssignFlight();
+            if (!ShiftManager.InLobby) AssignFlight();
         }
 
         string BuildReport()

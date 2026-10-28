@@ -51,6 +51,8 @@ namespace Turnaround.UI
             // "-host" or "-join <ip>" for quickly launching several local instances.
             var args = System.Environment.GetCommandLineArgs();
             int join = System.Array.IndexOf(args, "-join");
+            int shots = System.Array.IndexOf(args, "-shots");
+            if (shots >= 0 && shots + 1 < args.Length) gameObject.AddComponent<Turnaround.Core.DevShots>().folder = args[shots + 1];
             if (System.Array.IndexOf(args, "-host") >= 0 && ConnectionManager.StartHost() && System.Array.IndexOf(args, "-autoturn") >= 0)
                 gameObject.AddComponent<Turnaround.Core.DevAutoTurn>();
             else if (join >= 0 && join + 1 < args.Length) ConnectionManager.StartClient(address = args[join + 1]);

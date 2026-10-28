@@ -17,8 +17,7 @@ namespace Turnaround.Aircraft
         public AircraftDefinition definition;
         public FlightDefinition flight;
         public float pushLimitZ = 74f; // shortcut: one gate, so "on the taxiway" is a world Z line
-        public Vector3[] arrivalPath;
-        public Vector3[] departurePath;
+        public float gateX = 12f; // the stand's centreline; routes come from AirportRoutes
 
         readonly NetworkVariable<AircraftState> state = new();
         readonly NetworkVariable<int> flightNumber = new();
@@ -54,8 +53,9 @@ namespace Turnaround.Aircraft
         readonly HashSet<CarryableObject> scan = new();
         Renderer[] renderers;
         Collider[] colliders;
-        float yaw, speed, stateTime;
-        int waypoint;
+        readonly PathFollower path = new();
+        Waypoint[] route;
+        float stateTime;
 
         void Awake()
         {
@@ -77,6 +77,7 @@ namespace Turnaround.Aircraft
             state.OnValueChanged += OnStateChanged;
             ApplyVisibility();
             if (!IsServer) return;
+            PathFollower.Movers.Add(transform);
             ServerAssignFlight(flight.flightNumber, flight.outboundDestination);
             PlaceAtArrivalStart();
             InvokeRepeating(nameof(ScanZones), 1f, 0.5f);
@@ -84,8 +85,10 @@ namespace Turnaround.Aircraft
 
         void PlaceAtArrivalStart()
         {
-            yaw = Yaw(arrivalPath[1] - arrivalPath[0]);
-            transform.SetPositionAndRotation(arrivalPath[0], Quaternion.Euler(0f, yaw, 0f));
+            Runway.Release(this);
+            route = AirportRoutes.Arrival(gateX);
+            transform.SetPositionAndRotation(route[0].position, Quaternion.LookRotation(route[1].position - route[0].position));
+            path.Begin(transform, route[0].speed);
         }
 
         public void ServerAssignFlight(int number, string dest)
@@ -110,6 +113,8 @@ namespace Turnaround.Aircraft
         {
             state.OnValueChanged -= OnStateChanged;
             CancelInvoke();
+            PathFollower.Movers.Remove(transform);
+            Runway.Release(this);
         }
 
         void OnStateChanged(AircraftState previous, AircraftState current)
@@ -129,9 +134,12 @@ namespace Turnaround.Aircraft
         void SetState(AircraftState next)
         {
             state.Value = next;
-            waypoint = 0;
-            speed = 0f;
             stateTime = 0f;
+            if (next == AircraftState.Departing)
+            {
+                route = AirportRoutes.Departure(transform.position.x);
+                path.Begin(transform, 0f);
+            }
         }
 
         void Update()
@@ -142,7 +150,7 @@ namespace Turnaround.Aircraft
             {
                 case AircraftState.Approaching:
                     if (HoldArrival) stateTime = 0f;
-                    else if (stateTime > definition.arrivalDelay && Follow(arrivalPath, definition.taxiSpeed)) SetState(AircraftState.Parked);
+                    else if (stateTime > definition.arrivalDelay && path.Step(transform, route, this, Time.deltaTime)) SetState(AircraftState.Parked);
                     break;
                 case AircraftState.Parked:
                     if (AnyOpenOrConnected()) SetState(AircraftState.Servicing);
@@ -158,7 +166,7 @@ namespace Turnaround.Aircraft
                     else if (TugIsClear()) SetState(AircraftState.Departing);
                     break;
                 case AircraftState.Departing:
-                    if (Follow(departurePath, definition.taxiSpeed * 1.4f)) SetState(AircraftState.Gone);
+                    if (path.Step(transform, route, this, Time.deltaTime)) SetState(AircraftState.Gone);
                     break;
             }
         }
@@ -220,35 +228,6 @@ namespace Turnaround.Aircraft
             heading.y = 0f;
             if (heading.sqrMagnitude < 0.01f) return;
             transform.SetPositionAndRotation(towPosition, Quaternion.LookRotation(heading));
-            yaw = transform.eulerAngles.y;
         }
-
-        // Steers like a vehicle (moves along its heading, turns toward the waypoint), so corners are a bit sloppy on purpose.
-        bool Follow(Vector3[] path, float maxSpeed)
-        {
-            if (waypoint >= path.Length) return true;
-            bool last = waypoint == path.Length - 1;
-            Vector3 to = path[waypoint] - transform.position;
-            to.y = 0f;
-            float dist = to.magnitude;
-
-            if (dist < (last ? 0.25f : 3f) || (last && Vector3.Dot(to, transform.forward) < 0f))
-            {
-                waypoint++;
-                return waypoint >= path.Length;
-            }
-
-            // Slow down for sharp heading changes, otherwise a badly aimed pushback leaves it orbiting a waypoint forever.
-            float headingError = Mathf.Abs(Mathf.DeltaAngle(yaw, Yaw(to)));
-            float targetSpeed = last ? Mathf.Min(maxSpeed, 0.6f + dist * 0.25f) : maxSpeed;
-            targetSpeed = Mathf.Min(targetSpeed, Mathf.Max(2f, maxSpeed * (1f - headingError / 60f)));
-            speed = Mathf.MoveTowards(speed, targetSpeed, 2f * Time.deltaTime);
-            float turn = definition.turnRate * Mathf.Clamp01(speed / 1.5f) * Time.deltaTime;
-            yaw = Mathf.MoveTowardsAngle(yaw, Yaw(to), turn);
-            transform.SetPositionAndRotation(transform.position + transform.forward * (speed * Time.deltaTime), Quaternion.Euler(0f, yaw, 0f));
-            return false;
-        }
-
-        static float Yaw(Vector3 dir) => Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
     }
 }

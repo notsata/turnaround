@@ -117,9 +117,9 @@ namespace Turnaround.Baggage
         }
 
         // Next flight: clear this flight's luggage (untagged strays stay; they're nobody's problem) and start counting again.
-        public void ServerReset()
+        public void ServerReset(bool everything = false) // everything: bankruptcy takes the strays too
         {
-            foreach (var bag in BaggageItem.All.Where(b => b.Flight != 0).ToList()) bag.NetworkObject.Despawn();
+            foreach (var bag in BaggageItem.All.Where(b => everything || b.Flight != 0).ToList()) bag.NetworkObject.Despawn();
             spawned = false;
             extraSpawned = 0;
             inboundTotal.Value = outboundTotal.Value = inboundDelivered.Value = damaged.Value = 0;

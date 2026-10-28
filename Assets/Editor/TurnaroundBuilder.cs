@@ -26,7 +26,7 @@ using Random = System.Random;
 public static class TurnaroundBuilder
 {
     const string ScenePath = "Assets/Scenes/Ramp.unity";
-    static readonly Color FogColor = new(0.62f, 0.66f, 0.7f);
+    static readonly Color FogColor = new(0.74f, 0.8f, 0.86f);
 
     static readonly Dictionary<string, Material> Mats = new();
     static Font font;
@@ -68,7 +68,8 @@ public static class TurnaroundBuilder
         var aircraft = BuildAircraftPrefab(CreateAircraftDefinition(), flight);
         var equipment = BuildEquipmentPrefabs();
         var bagManager = BuildBaggageManagerPrefab(props);
-        var turnaround = BuildTurnaroundPrefab(flight, CreateTasks(), equipment["BaggageCart"]);
+        var traffic = BuildTrafficPrefab();
+        var turnaround = BuildTurnaroundPrefab(flight, CreateTasks(), equipment["BaggageCart"], traffic);
 
         const string listPath = "Assets/ScriptableObjects/NetworkPrefabs.asset";
         AssetDatabase.DeleteAsset(listPath);
@@ -76,6 +77,7 @@ public static class TurnaroundBuilder
         list.Add(new NetworkPrefab { Prefab = player });
         foreach (var p in props.Values) list.Add(new NetworkPrefab { Prefab = p });
         list.Add(new NetworkPrefab { Prefab = aircraft });
+        list.Add(new NetworkPrefab { Prefab = traffic });
         foreach (var e in equipment.Values) list.Add(new NetworkPrefab { Prefab = e });
         list.Add(new NetworkPrefab { Prefab = turnaround });
         list.Add(new NetworkPrefab { Prefab = bagManager }); // without scene management, in-scene network objects must be registered prefabs
@@ -85,6 +87,7 @@ public static class TurnaroundBuilder
         var world = new GameObject("World").transform;
         BuildLighting();
         BuildRamp(world);
+        BuildAirfield(world);
         PlaceProps(props);
         var aircraftInstance = PlaceAircraft(aircraft);
         PlaceEquipment(equipment);
@@ -117,7 +120,7 @@ public static class TurnaroundBuilder
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
         AssetDatabase.SaveAssets();
-        GenerateNetworkHashes(new List<GameObject>(props.Values) { player, aircraft, bagManager, turnaround }.Concat(equipment.Values).ToList());
+        GenerateNetworkHashes(new List<GameObject>(props.Values) { player, aircraft, traffic, bagManager, turnaround }.Concat(equipment.Values).ToList());
         Debug.Log("[TURNAROUND] Prototype rebuilt: " + ScenePath);
     }
 
@@ -262,12 +265,116 @@ public static class TurnaroundBuilder
         return r;
     }
 
+    // Inbound conveyor: runs from an unloading table on the ramp (z 11) in through the bag room door and drops bags
+    // onto the INBOUND area. Belt top at 0.9 m, low rails both sides.
+    static void BuildConveyor(Transform world, Material metal, Material yellow, Color ink)
+    {
+        const float x = -28f, zFrom = 11f, zTo = -1f, top = 0.9f;
+        float len = zFrom - zTo, mid = (zFrom + zTo) / 2f;
+        var root = Group("InboundConveyor", world, new Vector3(x, 0, mid), 180f); // forward = -Z, into the room
+        Box("Frame", root, new Vector3(0, top / 2f - 0.02f, 0), new Vector3(1.2f, top - 0.04f, len), metal);
+        var belt = Prim(PrimitiveType.Cube, "Belt", root, new Vector3(0, top - 0.02f, 0), new Vector3(1.1f, 0.04f, len), Mat("BeltRubber", new Color(0.12f, 0.12f, 0.12f), 0.3f, 0.3f, 1f), true);
+        belt.GetComponent<Renderer>().sharedMaterial.mainTextureScale = new Vector2(1f, len);
+        foreach (var side in new[] { -1f, 1f })
+            Box("Rail", root, new Vector3(0.6f * side, top + 0.15f, 0), new Vector3(0.08f, 0.3f, len), yellow);
+        var zone = new GameObject("CarryZone");
+        zone.transform.SetParent(root, false);
+        zone.transform.localPosition = new Vector3(0, top + 0.4f, 0);
+        var box = zone.AddComponent<BoxCollider>();
+        box.isTrigger = true;
+        box.size = new Vector3(1.1f, 0.8f, len);
+        var conveyor = belt.AddComponent<Conveyor>();
+        conveyor.carryZone = box;
+        conveyor.beltRenderer = belt.GetComponent<Renderer>();
+        Box("UnloadTable", world, new Vector3(x, 0.42f, zFrom + 1.2f), new Vector3(2.2f, 0.84f, 1.6f), metal);
+        Prim(PrimitiveType.Cube, "Sign", world, new Vector3(x, 1.8f, zFrom + 2.1f), new Vector3(1.8f, 0.7f, 0.04f), Flat("SignWhite", new Color(0.9f, 0.9f, 0.85f)));
+        Text("INBOUND BAGS\nON THE BELT", world, new Vector3(x, 1.8f, zFrom + 2.15f), new Vector3(0, 180, 0), 0.25f, ink); // read from the ramp side
+    }
+
+    // Crew lobby: where everyone waits before the shift. Rows of seats facing a glass wall onto the ramp, and the
+    // host's big red START button. Interior x 16..32, z -22..-6.
+    static void BuildLobby(Transform term, Material terminal, Material wood, Material plastic, Material metal, Color ink)
+    {
+        var lobby = Group("CrewLobby", term, new Vector3(24f, 0f, -14f));
+        var glassMat = new Material(Shader.Find("Legacy Shaders/Transparent/Diffuse")) { name = "LobbyGlass", color = new Color(0.6f, 0.75f, 0.85f, 0.18f) };
+        AssetDatabase.CreateAsset(glassMat, "Assets/Materials/LobbyGlass.mat");
+        var frame = Flat("WindowFrame", new Color(0.25f, 0.27f, 0.3f));
+        var carpet = Mat("SadCarpet", new Color(0.32f, 0.22f, 0.3f), 0.12f, 0.1f, 6f);
+        var seatMat = Mat("SeatBlue", new Color(0.18f, 0.3f, 0.55f), 0.08f, 0.04f);
+        var red = Flat("ButtonRed", new Color(0.9f, 0.08f, 0.06f));
+        var yellowText = new Color(0.95f, 0.8f, 0.1f);
+
+        Box("BackWall", lobby, new Vector3(0, 4.5f, -8.1f), new Vector3(16f, 9f, 0.3f), terminal);
+        Box("Ceiling", lobby, new Vector3(0, 4.2f, 0), new Vector3(16f, 0.2f, 16f), Mat("CeilingTile", new Color(0.82f, 0.82f, 0.78f), 0.06f, 0.06f, 8f));
+        Box("Glass", lobby, new Vector3(0, 2.05f, 8.05f), new Vector3(16f, 4.1f, 0.06f), glassMat);
+        Box("Fascia", lobby, new Vector3(0, 6.6f, 8.05f), new Vector3(16f, 4.8f, 0.3f), terminal); // above the ceiling, outside
+        for (float mx = -8f; mx <= 8.01f; mx += 4f)
+            Prim(PrimitiveType.Cube, "Mullion", lobby, new Vector3(mx, 2.05f, 8.05f), new Vector3(0.12f, 4.1f, 0.14f), frame);
+        Paint("Carpet", lobby, Vector3.zero, new Vector2(15.8f, 15.8f), carpet, 0.013f);
+
+        foreach (var z in new[] { 0f, -3f })
+        for (int i = 0; i < 6; i++)
+            Chair(lobby, new Vector3(-5f + i * 1f + (i >= 3 ? 1.5f : 0f), 0, z));
+
+        // The button: pedestal, yellow collar, red cap, between the seats and the glass.
+        var button = Group("StartButton", lobby, new Vector3(0, 0, 4.5f));
+        Box("Pedestal", button, new Vector3(0, 0.5f, 0), new Vector3(0.8f, 1f, 0.8f), Flat("PedestalGrey", new Color(0.3f, 0.3f, 0.32f)));
+        Prim(PrimitiveType.Cylinder, "Collar", button, new Vector3(0, 1.03f, 0), new Vector3(0.62f, 0.03f, 0.62f), Flat("CollarYellow", yellowText));
+        var cap = Prim(PrimitiveType.Cylinder, "Cap", button, new Vector3(0, 1.12f, 0), new Vector3(0.5f, 0.08f, 0.5f), red, true);
+        cap.AddComponent<StartShiftButton>().cap = cap.transform;
+        Text("START\nSHIFT", button, new Vector3(0, 0.6f, -0.41f), Vector3.zero, 0.14f, yellowText);
+        Text("START\nSHIFT", button, new Vector3(0, 0.6f, 0.41f), new Vector3(0, 180, 0), 0.14f, yellowText);
+
+        // Decorations: departures board, plants, a vending machine, a water cooler, a sign, a clock.
+        Box("DeparturesBoard", lobby, new Vector3(0, 2.7f, -7.85f), new Vector3(5f, 1.6f, 0.15f), Flat("BoardBlack", new Color(0.06f, 0.06f, 0.07f)));
+        Text("DEPARTURES\nAJ 401  ON TIME?\nSK 220  DELAYED\nAJ 402  ASK OPS", lobby, new Vector3(0, 2.75f, -7.76f), new Vector3(0, 180, 0), 0.2f, new Color(1f, 0.75f, 0.2f));
+        foreach (var px in new[] { -7.2f, 7.2f })
+        {
+            Prim(PrimitiveType.Cylinder, "PlantPot", lobby, new Vector3(px, 0.3f, 7.2f), new Vector3(0.6f, 0.3f, 0.6f), Mat("Terracotta", new Color(0.6f, 0.3f, 0.2f)), true);
+            Prim(PrimitiveType.Sphere, "FakePlant", lobby, new Vector3(px, 1.1f, 7.2f), new Vector3(0.9f, 1.1f, 0.9f), Mat("PlasticLeaves", new Color(0.25f, 0.5f, 0.25f), 0.2f, 0.15f));
+        }
+        Box("VendingMachine", lobby, new Vector3(-7.2f, 1f, -6.8f), new Vector3(1f, 2f, 0.8f), Mat("VendingRed", new Color(0.7f, 0.12f, 0.1f)));
+        Prim(PrimitiveType.Cube, "VendingGlass", lobby, new Vector3(-7.2f, 1.2f, -6.39f), new Vector3(0.6f, 1.2f, 0.02f), Flat("VendingGlow", new Color(0.8f, 0.9f, 1f)));
+        Box("WaterCooler", lobby, new Vector3(7.2f, 0.6f, -6.9f), new Vector3(0.45f, 1.2f, 0.45f), Flat("CoolerWhite", new Color(0.85f, 0.86f, 0.88f)));
+        Prim(PrimitiveType.Cylinder, "Jug", lobby, new Vector3(7.2f, 1.45f, -6.9f), new Vector3(0.32f, 0.25f, 0.32f), Flat("JugBlue", new Color(0.45f, 0.65f, 0.9f)));
+        Text("WELCOME CREW\nPLEASE DO NOT\nLICK THE AIRCRAFT", lobby, new Vector3(-4.5f, 2.9f, -7.9f), new Vector3(0, 180, 0), 0.16f, new Color(0.9f, 0.25f, 0.2f));
+        Prim(PrimitiveType.Cylinder, "Clock", lobby, new Vector3(4.5f, 3.2f, -7.92f), new Vector3(0.6f, 0.03f, 0.6f), Flat("ClockFace", Color.white), false, new Vector3(90, 0, 0));
+        Text("8:00", lobby, new Vector3(4.5f, 3.2f, -7.88f), new Vector3(0, 180, 0), 0.12f, ink);
+        Text("HOST: PRESS THE BIG RED BUTTON", lobby, new Vector3(0, 3.75f, 7.9f), Vector3.zero, 0.22f, yellowText);
+
+        foreach (var lx in new[] { -4f, 4f })
+        {
+            var light = new GameObject("LobbyLight").AddComponent<Light>();
+            light.transform.SetParent(lobby, false);
+            light.transform.localPosition = new Vector3(lx, 3.8f, -1f);
+            light.type = LightType.Point;
+            light.color = new Color(1f, 0.95f, 0.85f);
+            light.range = 11f;
+            light.intensity = 1.2f;
+            light.shadows = LightShadows.None;
+            Prim(PrimitiveType.Cube, "Panel", lobby, new Vector3(lx, 4.08f, -1f), new Vector3(1.2f, 0.04f, 0.6f), Flat("Tube", new Color(0.9f, 1f, 0.92f)));
+        }
+
+        var spawn = new GameObject("LobbySpawn").transform;
+        spawn.SetPositionAndRotation(new Vector3(18.5f, 0.1f, -9.5f), Quaternion.identity); // GoToSpawn spaces players out along +X
+
+        void Chair(Transform parent, Vector3 pos)
+        {
+            var c = Group("Chair", parent, pos);
+            var cushion = Box("Cushion", c, new Vector3(0, 0.4f, 0), new Vector3(0.5f, 0.12f, 0.5f), seatMat);
+            Prim(PrimitiveType.Cube, "Back", c, new Vector3(0, 0.75f, -0.24f), new Vector3(0.5f, 0.6f, 0.06f), seatMat, true);
+            Prim(PrimitiveType.Cube, "Frame", c, new Vector3(0, 0.17f, 0), new Vector3(0.08f, 0.34f, 0.4f), metal);
+            // Seated pose has the hips 0.78 above the root, so the root goes below the cushion top (0.46).
+            cushion.AddComponent<Chair>().seat = Group("SeatPoint", c, new Vector3(0, -0.32f, 0.02f));
+        }
+    }
+
     static void SetupCamera(Camera cam)
     {
-        cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.clearFlags = CameraClearFlags.Skybox;
         cam.backgroundColor = FogColor;
         cam.nearClipPlane = 0.05f;
-        cam.farClipPlane = 400f;
+        cam.farClipPlane = 2500f; // aircraft on approach, hills on the horizon
         cam.fieldOfView = 72f;
     }
 
@@ -310,8 +417,14 @@ public static class TurnaroundBuilder
         var head = Group("Head", body, new Vector3(0, 1.62f, 0));
         Prim(PrimitiveType.Sphere, "Skull", head, Vector3.zero, Vector3.one * 0.64f, skin); // oversized on purpose
         Prim(PrimitiveType.Sphere, "Nose", head, new Vector3(0, -0.03f, 0.31f), new Vector3(0.12f, 0.1f, 0.14f), skin);
-        Prim(PrimitiveType.Sphere, "EyeL", head, new Vector3(-0.11f, 0.07f, 0.28f), Vector3.one * 0.07f, black);
-        Prim(PrimitiveType.Sphere, "EyeR", head, new Vector3(0.11f, 0.07f, 0.28f), Vector3.one * 0.07f, black);
+        // Googly eyes: white sclera, black pupils the EyeTracker slides around.
+        var sclera = Flat("EyeWhite", new Color(0.97f, 0.97f, 0.95f));
+        Prim(PrimitiveType.Sphere, "EyeL", head, new Vector3(-0.11f, 0.07f, 0.27f), Vector3.one * 0.13f, sclera);
+        Prim(PrimitiveType.Sphere, "EyeR", head, new Vector3(0.11f, 0.07f, 0.27f), Vector3.one * 0.13f, sclera);
+        var eyes = root.AddComponent<EyeTracker>();
+        eyes.head = head;
+        eyes.pupilL = Prim(PrimitiveType.Sphere, "PupilL", head, new Vector3(-0.11f, 0.07f, 0.322f), new Vector3(0.06f, 0.06f, 0.03f), black).transform;
+        eyes.pupilR = Prim(PrimitiveType.Sphere, "PupilR", head, new Vector3(0.11f, 0.07f, 0.322f), new Vector3(0.06f, 0.06f, 0.03f), black).transform;
         Prim(PrimitiveType.Cylinder, "MuffL", head, new Vector3(-0.32f, 0, 0), new Vector3(0.22f, 0.06f, 0.22f), muff, false, new Vector3(0, 0, 90));
         Prim(PrimitiveType.Cylinder, "MuffR", head, new Vector3(0.32f, 0, 0), new Vector3(0.22f, 0.06f, 0.22f), muff, false, new Vector3(0, 0, 90));
         Prim(PrimitiveType.Cube, "MuffBand", head, new Vector3(0, 0.31f, 0), new Vector3(0.68f, 0.05f, 0.08f), muff);
@@ -505,51 +618,70 @@ public static class TurnaroundBuilder
 
     // ---------- environment ----------
 
+    // Bright daytime: procedural sky, trilight ambient, warm sun with soft shadows, long thin haze.
     static void BuildLighting()
     {
-        RenderSettings.skybox = null;
-        RenderSettings.ambientMode = AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.42f, 0.44f, 0.48f);
+        var sky = new Material(Shader.Find("Skybox/Procedural")) { name = "DaySky" };
+        sky.SetFloat("_SunDisk", 2f);
+        sky.SetFloat("_SunSize", 0.035f);
+        sky.SetFloat("_SunSizeConvergence", 5f);
+        sky.SetFloat("_AtmosphereThickness", 0.85f);
+        sky.SetColor("_SkyTint", new Color(0.5f, 0.5f, 0.5f)); // neutral: tinting it blue turned the horizon green
+        sky.SetColor("_GroundColor", new Color(0.37f, 0.35f, 0.34f));
+        sky.SetFloat("_Exposure", 1.25f);
+        AssetDatabase.CreateAsset(sky, "Assets/Materials/DaySky.mat");
+        RenderSettings.skybox = sky;
+
+        RenderSettings.ambientMode = AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor = new Color(0.62f, 0.7f, 0.82f);
+        RenderSettings.ambientEquatorColor = new Color(0.55f, 0.57f, 0.58f);
+        RenderSettings.ambientGroundColor = new Color(0.3f, 0.29f, 0.26f);
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Linear;
         RenderSettings.fogColor = FogColor;
-        RenderSettings.fogStartDistance = 30f;
-        RenderSettings.fogEndDistance = 170f;
+        RenderSettings.fogStartDistance = 180f;
+        RenderSettings.fogEndDistance = 1400f;
 
-        var sun = new GameObject("OvercastSun").AddComponent<Light>();
+        var sun = new GameObject("Sun").AddComponent<Light>();
         sun.type = LightType.Directional;
-        sun.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
-        sun.color = new Color(1f, 0.95f, 0.85f);
-        sun.intensity = 0.95f;
-        sun.shadows = LightShadows.Hard;
-        sun.shadowStrength = 0.55f;
+        sun.transform.rotation = Quaternion.Euler(48f, -35f, 0f);
+        sun.color = new Color(1f, 0.96f, 0.88f);
+        sun.intensity = 1.1f;
+        sun.shadows = LightShadows.Soft;
+        sun.shadowStrength = 0.75f;
+        RenderSettings.sun = sun;
+        QualitySettings.shadowDistance = 160f; // shadows near you, not across the whole airfield
     }
 
     static void BuildRamp(Transform world)
     {
-        var concrete = Mat("DirtyConcrete", new Color(0.56f, 0.56f, 0.54f), 0.14f, 0.06f, 40f);
+        var concrete = Mat("DirtyConcrete", new Color(0.46f, 0.46f, 0.45f), 0.14f, 0.06f, 40f);
         var asphalt = Mat("Asphalt", new Color(0.22f, 0.22f, 0.23f), 0.12f, 0.08f, 30f);
         var terminal = Mat("TerminalPanel", new Color(0.6f, 0.62f, 0.66f), 0.08f, 0.03f, 6f);
         var glass = Flat("DirtyGlass", new Color(0.18f, 0.25f, 0.32f));
         var yellow = Mat("FadedYellow", new Color(0.85f, 0.72f, 0.2f), 0.18f, 0.12f, 6f);
         var white = Mat("FadedWhite", new Color(0.82f, 0.82f, 0.78f), 0.15f, 0.12f, 6f);
         var red = Mat("FadedRed", new Color(0.72f, 0.18f, 0.15f), 0.15f, 0.1f, 6f);
-        var grass = Mat("SadGrass", new Color(0.38f, 0.45f, 0.24f), 0.2f, 0.1f, 20f);
+        Mat("SadGrass", new Color(0.3f, 0.37f, 0.2f), 0.2f, 0.1f, 150f); // the airfield's grass uses it
+        Mat("Asphalt", new Color(0.22f, 0.22f, 0.23f), 0.12f, 0.08f, 30f);
         var metal = Mat("RustyMetal", new Color(0.45f, 0.42f, 0.38f), 0.2f, 0.12f);
         var wood = Mat("CheapLaminate", new Color(0.6f, 0.48f, 0.32f), 0.1f, 0.03f);
         var plastic = Mat("OfficePlastic", new Color(0.3f, 0.33f, 0.4f), 0.06f, 0.02f);
         var ink = new Color(0.1f, 0.1f, 0.12f);
 
         // Thick so nothing shoved by an overlap (players, spawns) can be pushed through it.
-        Box("Ground", world, new Vector3(0, -1f, 35f), new Vector3(140f, 2f, 140f), concrete);
-        Paint("GrassStrip", world, new Vector3(0, 0, 101f), new Vector2(140f, 8f), grass);
+        Box("Ground", world, new Vector3(20f, -1f, 35f), new Vector3(220f, 2f, 130f), concrete); // the apron; grass beyond
 
         // Terminal building with gates.
         var term = Group("Terminal", world);
-        Box("TerminalBlock", term, new Vector3(0, 4.5f, -14f), new Vector3(100f, 9f, 16f), terminal);
-        Prim(PrimitiveType.Cube, "WindowStrip", term, new Vector3(0, 6.2f, -5.95f), new Vector3(92f, 1.6f, 0.1f), glass);
-        Prim(PrimitiveType.Cube, "RoofEdge", term, new Vector3(0, 9.2f, -14f), new Vector3(100.5f, 0.5f, 16.5f), Mat("Roof", Color.gray));
-        foreach (var (gate, x) in new[] { ("B4", 12f), ("B5", 36f) })
+        // Solid either side of the crew lobby (x 16..32), which is hollow with a glass front onto the ramp.
+        Box("TerminalWest", term, new Vector3(-17f, 4.5f, -14f), new Vector3(66f, 9f, 16f), terminal);
+        Box("TerminalEast", term, new Vector3(56f, 4.5f, -14f), new Vector3(48f, 9f, 16f), terminal);
+        Prim(PrimitiveType.Cube, "WindowStripWest", term, new Vector3(-16f, 6.2f, -5.95f), new Vector3(60f, 1.6f, 0.1f), glass);
+        Prim(PrimitiveType.Cube, "WindowStripEast", term, new Vector3(55f, 6.2f, -5.95f), new Vector3(42f, 1.6f, 0.1f), glass);
+        BuildLobby(term, terminal, wood, plastic, metal, ink);
+        Prim(PrimitiveType.Cube, "RoofEdge", term, new Vector3(15f, 9.2f, -14f), new Vector3(130.5f, 0.5f, 16.5f), Mat("Roof", Color.gray));
+        foreach (var (gate, x) in new[] { ("B4", 12f), ("B5", 36f), ("B6", 60f) })
         {
             Text("GATE " + gate, term, new Vector3(x, 8.1f, -5.85f), new Vector3(0, 180, 0), 0.9f, new Color(0.95f, 0.8f, 0.2f));
             Prim(PrimitiveType.Cube, "GateDoor" + gate, term, new Vector3(x, 1.3f, -5.95f), new Vector3(2f, 2.6f, 0.1f), Flat("Door", new Color(0.3f, 0.32f, 0.3f)));
@@ -561,6 +693,7 @@ public static class TurnaroundBuilder
         Box("InboundBelt", bagRoom, new Vector3(0, 0.45f, -3f), new Vector3(13f, 0.9f, 1.2f), metal);
         Prim(PrimitiveType.Cube, "BeltSurface", bagRoom, new Vector3(0, 0.91f, -3f), new Vector3(12.6f, 0.03f, 1f), Flat("Rubber", new Color(0.08f, 0.08f, 0.08f)));
         Text("OUTBOUND - SORT ME", bagRoom, new Vector3(0, 2.3f, -3.85f), new Vector3(0, 180, 0), 0.25f, ink);
+        BuildConveyor(world, metal, yellow, ink);
 
         var breakRoom = Room("BreakRoom", world, new Vector3(-15f, 0, -2f), 0f, new Vector2(8f, 8f), 1.8f, "BREAK ROOM");
         Box("VendingMachine", breakRoom, new Vector3(-3f, 1f, -3.3f), new Vector3(1f, 2f, 0.8f), Mat("VendingRed", new Color(0.7f, 0.12f, 0.1f)));
@@ -590,14 +723,14 @@ public static class TurnaroundBuilder
 
         // Service road between building and stands.
         var road = Group("ServiceRoad", world);
-        Paint("Asphalt", road, new Vector3(0, 0, 5f), new Vector2(110f, 5f), asphalt);
-        Paint("EdgeNear", road, new Vector3(0, 0, 2.65f), new Vector2(110f, 0.15f), white, 0.013f);
-        Paint("EdgeFar", road, new Vector3(0, 0, 7.35f), new Vector2(110f, 0.15f), white, 0.013f);
-        for (float x = -52f; x < 55f; x += 6f) Paint("Dash", road, new Vector3(x, 0, 5f), new Vector2(2.5f, 0.15f), white, 0.013f);
+        Paint("Asphalt", road, new Vector3(20f, 0, 5f), new Vector2(216f, 5f), asphalt);
+        Paint("EdgeNear", road, new Vector3(20f, 0, 2.65f), new Vector2(216f, 0.15f), white, 0.013f);
+        Paint("EdgeFar", road, new Vector3(20f, 0, 7.35f), new Vector2(216f, 0.15f), white, 0.013f);
+        for (float x = -86f; x < 128f; x += 6f) Paint("Dash", road, new Vector3(x, 0, 5f), new Vector2(2.5f, 0.15f), white, 0.013f);
         Text("VEHICLE LANE", road, new Vector3(-24f, 0.02f, 5f), new Vector3(90, 0, 0), 0.9f, new Color(0.85f, 0.85f, 0.8f));
 
         // Gate stands.
-        foreach (var (gate, x) in new[] { ("B4", 12f), ("B5", 36f) })
+        foreach (var (gate, x) in new[] { ("B4", 12f), ("B5", 36f), ("B6", 60f) })
         {
             var stand = Group("Stand" + gate, world, new Vector3(x, 0, 0));
             Paint("LeadIn", stand, new Vector3(0, 0, 37f), new Vector2(0.25f, 46f), yellow, 0.013f);
@@ -614,19 +747,6 @@ public static class TurnaroundBuilder
         for (int i = 0; i <= 4; i++) Paint("Bay", parking, new Vector3(-48f + i * 4f, 0, 17f), new Vector2(0.15f, 8f), white, 0.013f);
         Paint("BayBack", parking, new Vector3(-40f, 0, 13f), new Vector2(16f, 0.15f), white, 0.013f);
         Text("EQUIPMENT\nPARKING", parking, new Vector3(-40f, 0.02f, 23f), new Vector3(90, 0, 0), 0.7f, new Color(0.85f, 0.85f, 0.8f));
-
-        // Taxiway with a distant aircraft that is not our problem.
-        var taxi = Group("Taxiway", world);
-        Paint("Asphalt", taxi, new Vector3(0, 0, 85f), new Vector2(140f, 22f), asphalt);
-        Paint("Centerline", taxi, new Vector3(0, 0, 85f), new Vector2(140f, 0.3f), yellow, 0.013f);
-        var blue = Flat("TaxiLight", new Color(0.2f, 0.4f, 1f));
-        for (float x = -65f; x <= 65f; x += 10f)
-        {
-            Prim(PrimitiveType.Cube, "EdgeLight", taxi, new Vector3(x, 0.15f, 74.5f), Vector3.one * 0.2f, blue);
-            Prim(PrimitiveType.Cube, "EdgeLight", taxi, new Vector3(x, 0.15f, 95.5f), Vector3.one * 0.2f, blue);
-        }
-        DistantJet(world, new Vector3(-30f, 0, 85f), 90f);
-        DistantJet(world, new Vector3(64f, 0, 30f), 200f);
 
         foreach (var x in new[] { -2f, 24f, 48f })
         {
@@ -789,9 +909,11 @@ public static class TurnaroundBuilder
         };
     }
 
-    static GameObject BuildTurnaroundPrefab(FlightDefinition flight, TaskDefinition[] tasks, GameObject cartPrefab)
+    static GameObject BuildTurnaroundPrefab(FlightDefinition flight, TaskDefinition[] tasks, GameObject cartPrefab, GameObject trafficPrefab)
     {
         var go = new GameObject("Turnaround");
+        go.AddComponent<TrafficManager>().trafficPrefab = trafficPrefab;
+        go.AddComponent<ShiftManager>();
         go.AddComponent<NetworkObject>();
         go.AddComponent<TurnaroundManager>().flight = flight;
         go.AddComponent<TaskManager>().tasks = tasks;
@@ -893,8 +1015,8 @@ public static class TurnaroundBuilder
             for (float d = 0f; d < Vector3.Distance(a, b); d += 2.5f)
                 Prim(PrimitiveType.Cube, "Dash", parent, Vector3.MoveTowards(a, b, d) + Vector3.up * 0.013f, new Vector3(0.15f, 0.02f, 1.2f), white, false, new Vector3(0, yaw, 0));
         }
-        Paint("PushLimit", parent, new Vector3(-3f, 0, limitZ), new Vector2(34f, 0.35f), Mat("FadedRed", Color.red), 0.014f);
-        Text("PUSH LIMIT", parent, new Vector3(9f, 0.03f, limitZ - 1f), new Vector3(90, 0, 0), 0.5f, new Color(0.8f, 0.25f, 0.2f));
+        Paint("PushLimit", parent, new Vector3(20f, 0, limitZ), new Vector2(34f, 0.35f), Mat("FadedRed", Color.red), 0.014f);
+        Text("PUSH LIMIT", parent, new Vector3(22f, 0.03f, limitZ - 1f), new Vector3(90, 0, 0), 0.5f, new Color(0.8f, 0.25f, 0.2f));
     }
 
     // ---------- equipment ----------
@@ -1144,16 +1266,26 @@ public static class TurnaroundBuilder
         return mesh;
     }
 
+    // Somebody else's regional jet: same airframe, solid belly, no service points.
+    static GameObject BuildTrafficPrefab()
+    {
+        var root = new GameObject("TrafficJet");
+        root.AddComponent<Rigidbody>().isKinematic = true;
+        root.AddComponent<NetworkObject>();
+        var nt = root.AddComponent<NetworkTransform>();
+        nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
+        root.AddComponent<TrafficAircraft>();
+        BuildAirframe(root.transform, new Color(0.7f, 0.15f, 0.12f), "SKYLARK", holdGap: false);
+        return SavePrefab(root, "Assets/Prefabs/Aircraft/TrafficJet.prefab");
+    }
+
     // AeroJet RJ-200: generic regional jet, ~26 m long, 20 m span. Root = nose gear on the ground, nose toward +Z.
     // Fuselage centre y=2.3, radius 1.4. Forward hold is z -6.5..-3, opening on the right (+X) side.
     static GameObject BuildAircraftPrefab(AircraftDefinition def, FlightDefinition flight)
     {
-        var white = Mat("JetWhite", new Color(0.86f, 0.87f, 0.89f), 0.06f, 0.02f);
         var panel = Mat("JetPanel", new Color(0.74f, 0.75f, 0.78f), 0.06f, 0.03f);
-        var livery = Flat("JetTail", new Color(0.15f, 0.3f, 0.6f));
         var glass = Flat("CockpitGlass", new Color(0.08f, 0.1f, 0.14f));
         var lining = Mat("HoldLining", new Color(0.3f, 0.3f, 0.32f), 0.15f, 0.08f);
-        var grey = Mat("GearGrey", new Color(0.42f, 0.42f, 0.44f));
         var rubber = HandleMat();
         var hose = Flat("Hose", new Color(0.1f, 0.1f, 0.1f));
         var portMat = Mat("ServicePanel", new Color(0.55f, 0.56f, 0.58f), 0.1f, 0.05f);
@@ -1162,69 +1294,13 @@ public static class TurnaroundBuilder
         root.AddComponent<Rigidbody>().isKinematic = true; // moving colliders want a kinematic body
         root.AddComponent<NetworkObject>();
         var nt = root.AddComponent<NetworkTransform>();
-        nt.SyncRotAngleX = nt.SyncRotAngleZ = false;
         nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
         var controller = root.AddComponent<AircraftController>();
         controller.definition = def;
         controller.flight = flight;
         var t = root.transform;
 
-        // Fuselage: forward barrel, hold section with a gap, aft barrel. Cylinder caps double as hold end walls.
-        Prim(PrimitiveType.Cylinder, "FuselageFwd", t, new Vector3(0, 2.3f, -0.5f), new Vector3(2.8f, 2.5f, 2.8f), white, false, new Vector3(90, 0, 0));
-        Prim(PrimitiveType.Cylinder, "FuselageAft", t, new Vector3(0, 2.3f, -13.25f), new Vector3(2.8f, 6.75f, 2.8f), white, false, new Vector3(90, 0, 0));
-        const string meshPath = "Assets/Art/RJ200_HoldSection.asset";
-        AssetDatabase.DeleteAsset(meshPath);
-        var holdMesh = TubeWithGap(1.4f, 3.5f, 20, -55f, 0f);
-        AssetDatabase.CreateAsset(holdMesh, meshPath);
-        var section = new GameObject("FuselageHoldSection");
-        section.transform.SetParent(t, false);
-        section.transform.localPosition = new Vector3(0, 2.3f, -4.75f);
-        section.AddComponent<MeshFilter>().sharedMesh = holdMesh;
-        section.AddComponent<MeshRenderer>().sharedMaterial = white;
-
-        Prim(PrimitiveType.Sphere, "Nose", t, new Vector3(0, 2.25f, 2f), new Vector3(2.8f, 2.6f, 4.4f), white);
-        Prim(PrimitiveType.Cube, "CockpitWindows", t, new Vector3(0, 2.85f, 3.2f), new Vector3(1.9f, 0.45f, 1.1f), glass, false, new Vector3(-25, 0, 0));
-        Prim(PrimitiveType.Sphere, "TailCone", t, new Vector3(0, 2.5f, -20f), new Vector3(2.4f, 2.3f, 5f), white);
-        foreach (var side in new[] { -1f, 1f })
-        {
-            Prim(PrimitiveType.Cube, "Windows", t, new Vector3(1.37f * side, 2.85f, -10f), new Vector3(0.05f, 0.26f, 15f), glass);
-            Prim(PrimitiveType.Cube, "CheatLine", t, new Vector3(1.39f * side, 2.5f, -9f), new Vector3(0.04f, 0.14f, 22f), livery);
-            Text("AEROJET", t, new Vector3(1.43f * side, 3.25f, -12f), new Vector3(0, -90f * side, 0), 0.45f, new Color(0.15f, 0.3f, 0.6f));
-
-            Prim(PrimitiveType.Cube, "Wing", t, new Vector3(5.6f * side, 2.2f, -10.5f), new Vector3(9f, 0.28f, 3.2f), white, true, new Vector3(0, 10f * side, 0));
-            Prim(PrimitiveType.Cylinder, "Engine", t, new Vector3(4.2f * side, 1.5f, -8.8f), new Vector3(1.3f, 1.5f, 1.3f), white, true, new Vector3(90, 0, 0));
-            Prim(PrimitiveType.Cylinder, "Intake", t, new Vector3(4.2f * side, 1.5f, -7.28f), new Vector3(1.1f, 0.02f, 1.1f), glass, false, new Vector3(90, 0, 0));
-            Prim(PrimitiveType.Cube, "Pylon", t, new Vector3(4.2f * side, 2.05f, -9.2f), new Vector3(0.2f, 0.5f, 1.6f), white);
-
-            Prim(PrimitiveType.Cylinder, "MainStrut", t, new Vector3(2.2f * side, 0.9f, -10.5f), new Vector3(0.2f, 0.55f, 0.2f), grey);
-            foreach (var dx in new[] { -0.22f, 0.22f })
-                Prim(PrimitiveType.Cylinder, "MainWheel", t, new Vector3(2.2f * side + dx, 0.4f, -10.5f), new Vector3(0.8f, 0.1f, 0.8f), rubber, true, new Vector3(0, 0, 90));
-        }
-        Prim(PrimitiveType.Cube, "Fin", t, new Vector3(0, 5.2f, -20.5f), new Vector3(0.3f, 4.2f, 3.4f), livery, true, new Vector3(-20, 0, 0));
-        Prim(PrimitiveType.Cube, "Stabilizer", t, new Vector3(0, 7.15f, -22f), new Vector3(8f, 0.22f, 2.2f), white); // T-tail
-
-        // Nose gear sits on the root; this is also where the tug will hook up.
-        Prim(PrimitiveType.Cylinder, "NoseStrut", t, new Vector3(0, 0.75f, 0), new Vector3(0.15f, 0.5f, 0.15f), grey);
-        foreach (var dx in new[] { -0.16f, 0.16f })
-            Prim(PrimitiveType.Cylinder, "NoseWheel", t, new Vector3(dx, 0.3f, 0), new Vector3(0.6f, 0.08f, 0.6f), rubber, false, new Vector3(0, 0, 90)); // no collider: the tug lives here
-        Group("PushbackPoint", t, new Vector3(0, 0.3f, 0.6f));
-
-        // Collision shell: boxes around everything except the hold cavity.
-        ColliderBox("Col_Upper", t, new Vector3(0, 3.05f, -8.5f), new Vector3(2.8f, 1.5f, 25f));
-        ColliderBox("Col_BellyFwd", t, new Vector3(0, 1.6f, 0.25f), new Vector3(2.8f, 1.4f, 6.5f));
-        ColliderBox("Col_BellyAft", t, new Vector3(0, 1.6f, -13.25f), new Vector3(2.8f, 1.4f, 13.5f));
-        ColliderBox("Col_HoldBelly", t, new Vector3(0, 1.0f, -4.75f), new Vector3(2.0f, 0.2f, 3.5f));
-        ColliderBox("Col_HoldLeft", t, new Vector3(-1.2f, 1.6f, -4.75f), new Vector3(0.4f, 1.4f, 3.5f));
-        // Keep equipment from driving under the belly (behind the nose gear, so the tug still fits under the nose),
-        // plus the nose, tail cone and gear legs, which used to be visual only.
-        ColliderBox("Col_UnderBelly", t, new Vector3(0, 0.425f, -11.5f), new Vector3(2.2f, 0.85f, 21f)); // below the service panels
-        var nose = new GameObject("Col_Nose");
-        nose.transform.SetParent(t, false);
-        var noseCap = nose.AddComponent<CapsuleCollider>();
-        (noseCap.center, noseCap.radius, noseCap.height, noseCap.direction) = (new Vector3(0, 2.3f, 1.9f), 1.25f, 4.4f, 2);
-        ColliderBox("Col_TailCone", t, new Vector3(0, 2.6f, -21.5f), new Vector3(2.0f, 2.0f, 3.5f));
-        foreach (var side in new[] { -1f, 1f }) ColliderBox("Col_MainGear", t, new Vector3(2.2f * side, 0.7f, -10.5f), new Vector3(0.7f, 1.4f, 0.9f));
-        ColliderBox("Col_NoseGear", t, new Vector3(0, 0.75f, 0), new Vector3(0.35f, 0.8f, 0.35f));
+        BuildAirframe(t, new Color(0.15f, 0.3f, 0.6f), "AEROJET", holdGap: true);
 
         // Forward hold: lined box inside the gap, floor at y 1.3 (chest height, good for throwing).
         Prim(PrimitiveType.Cube, "HoldFloor", t, new Vector3(0, 1.2f, -4.75f), new Vector3(1.96f, 0.2f, 3.5f), lining, true);
@@ -1303,32 +1379,329 @@ public static class TurnaroundBuilder
         }
     }
 
-    // Gate B4: arrive along the taxiway, turn onto the lead-in line, stop with the nose gear on the stop bar.
-    // Pushback swings the tail west so the nose ends up pointing east down the taxiway.
+    // Gate B4: lands on 09, taxis in from A5 (AirportRoutes). Pushback swings the tail east so the nose ends up
+    // pointing west down the taxiway, toward the departure end.
     static AircraftController PlaceAircraft(GameObject prefab)
     {
         var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
         var ac = go.GetComponent<AircraftController>();
-        ac.arrivalPath = new[] { new Vector3(-70, 0, 85), new Vector3(0, 0, 85), new Vector3(12, 0, 72), new Vector3(12, 0, 50), new Vector3(12, 0, 15) };
-        ac.departurePath = new[] { new Vector3(40, 0, 85), new Vector3(100, 0, 85) };
-        go.transform.SetPositionAndRotation(ac.arrivalPath[0], Quaternion.Euler(0, 90, 0));
+        ac.gateX = 12f;
+        var start = AirportRoutes.Arrival(ac.gateX);
+        go.transform.SetPositionAndRotation(start[0].position, Quaternion.Euler(0, 90, 0));
         PrefabUtility.RecordPrefabInstancePropertyModifications(ac);
-        PaintPushbackGuide(new[] { new Vector3(12, 0, 15), new Vector3(12, 0, 58), new Vector3(2, 0, 80), new Vector3(-10, 0, 85) }, ac.pushLimitZ);
+        PaintPushbackGuide(new[] { new Vector3(12, 0, 15), new Vector3(12, 0, 58), new Vector3(22, 0, 80), new Vector3(34, 0, 85) }, ac.pushLimitZ);
         return ac;
     }
 
-    // Not the RJ-200, just background. No colliders except the fuselage.
-    static void DistantJet(Transform world, Vector3 pos, float yaw)
+    // Generic regional jet, low-poly but shaped: root = nose gear on the ground, nose toward +Z, fuselage centre
+    // y=2.3, radius 1.4, z -20..+2. Builds the looks and the collision shell. With holdGap, the forward hold
+    // (z -6.5..-3, right side) is an open cavity; without it the belly is solid (traffic aircraft).
+    static void BuildAirframe(Transform t, Color tailColor, string airline, bool holdGap)
     {
-        var body = Mat("JetWhite", new Color(0.85f, 0.86f, 0.88f), 0.06f, 0.02f);
-        var tail = Flat("JetTail", new Color(0.15f, 0.3f, 0.6f));
-        var j = Group("DistantJet", world, pos, yaw);
-        Prim(PrimitiveType.Cylinder, "Fuselage", j, new Vector3(0, 2.6f, 0), new Vector3(3f, 14f, 3f), body, true, new Vector3(90, 0, 0));
-        Prim(PrimitiveType.Sphere, "Nose", j, new Vector3(0, 2.6f, 14f), new Vector3(3f, 3f, 3f), body);
-        Prim(PrimitiveType.Cube, "Wings", j, new Vector3(0, 2f, 1f), new Vector3(28f, 0.3f, 4f), body);
-        Prim(PrimitiveType.Cube, "Tailfin", j, new Vector3(0, 6f, -12.5f), new Vector3(0.3f, 5f, 3f), tail);
-        Prim(PrimitiveType.Cube, "Stabilizer", j, new Vector3(0, 3.2f, -13f), new Vector3(9f, 0.25f, 2f), body);
-        foreach (var x in new[] { -1.6f, 1.6f }) Prim(PrimitiveType.Cylinder, "Gear", j, new Vector3(x, 0.5f, 0), new Vector3(1f, 0.25f, 1f), HandleMat(), false, new Vector3(0, 0, 90));
-        Prim(PrimitiveType.Cylinder, "NoseGear", j, new Vector3(0, 0.4f, 11f), new Vector3(0.8f, 0.2f, 0.8f), HandleMat(), false, new Vector3(0, 0, 90));
+        var white = Mat("JetWhite", new Color(0.88f, 0.89f, 0.91f), 0.05f, 0.02f);
+        var livery = Flat("Livery_" + airline, tailColor);
+        var glass = Flat("CockpitGlass", new Color(0.07f, 0.09f, 0.13f));
+        var darkGrey = Mat("JetDarkGrey", new Color(0.25f, 0.26f, 0.28f), 0.08f, 0.04f);
+        var grey = Mat("GearGrey", new Color(0.42f, 0.42f, 0.44f));
+        var rubber = HandleMat();
+
+        // Fuselage barrel.
+        if (holdGap)
+        {
+            Prim(PrimitiveType.Cylinder, "FuselageFwd", t, new Vector3(0, 2.3f, -0.5f), new Vector3(2.8f, 2.5f, 2.8f), white, false, new Vector3(90, 0, 0));
+            Prim(PrimitiveType.Cylinder, "FuselageAft", t, new Vector3(0, 2.3f, -13.25f), new Vector3(2.8f, 6.75f, 2.8f), white, false, new Vector3(90, 0, 0));
+            const string meshPath = "Assets/Art/RJ200_HoldSection.asset";
+            var holdMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+            if (holdMesh == null)
+            {
+                holdMesh = TubeWithGap(1.4f, 3.5f, 20, -55f, 0f);
+                AssetDatabase.CreateAsset(holdMesh, meshPath);
+            }
+            var section = new GameObject("FuselageHoldSection");
+            section.transform.SetParent(t, false);
+            section.transform.localPosition = new Vector3(0, 2.3f, -4.75f);
+            section.AddComponent<MeshFilter>().sharedMesh = holdMesh;
+            section.AddComponent<MeshRenderer>().sharedMaterial = white;
+        }
+        else Prim(PrimitiveType.Cylinder, "Fuselage", t, new Vector3(0, 2.3f, -9f), new Vector3(2.8f, 11f, 2.8f), white, false, new Vector3(90, 0, 0));
+
+        // Nose: ellipsoid, radome tip, wrap-around cockpit glass.
+        Prim(PrimitiveType.Sphere, "Nose", t, new Vector3(0, 2.25f, 2f), new Vector3(2.8f, 2.6f, 4.4f), white);
+        Prim(PrimitiveType.Sphere, "Radome", t, new Vector3(0, 2.15f, 4.0f), new Vector3(0.9f, 0.9f, 0.6f), darkGrey);
+        Prim(PrimitiveType.Cube, "Windshield", t, new Vector3(0, 2.98f, 3.45f), new Vector3(1.15f, 0.34f, 0.05f), glass, false, new Vector3(-38, 0, 0));
+        foreach (var side in new[] { -1f, 1f })
+            Prim(PrimitiveType.Cube, "SideWindow", t, new Vector3(0.88f * side, 2.92f, 3.0f), new Vector3(0.05f, 0.3f, 0.62f), glass, false, new Vector3(0, -24f * side, 0));
+
+        // Tail: tapered and upswept in three steps, swept fin, T-tail with swept halves.
+        Prim(PrimitiveType.Cylinder, "Tail1", t, new Vector3(0, 2.4f, -21f), new Vector3(2.5f, 1f, 2.4f), white, false, new Vector3(90, 0, 0));
+        Prim(PrimitiveType.Cylinder, "Tail2", t, new Vector3(0, 2.6f, -22.6f), new Vector3(1.9f, 0.8f, 1.7f), white, false, new Vector3(84, 0, 0));
+        Prim(PrimitiveType.Sphere, "TailTip", t, new Vector3(0, 2.85f, -23.6f), new Vector3(1.1f, 1.0f, 1.8f), white);
+        Prim(PrimitiveType.Cube, "Fin", t, new Vector3(0, 5.2f, -21.4f), new Vector3(0.28f, 4.4f, 3.2f), livery, true, new Vector3(-28, 0, 0));
+        Prim(PrimitiveType.Cube, "FinRoot", t, new Vector3(0, 3.7f, -19.6f), new Vector3(0.26f, 0.9f, 2.2f), livery, false, new Vector3(-12, 0, 0));
+        foreach (var side in new[] { -1f, 1f })
+            Prim(PrimitiveType.Cube, "Stabilizer", t, new Vector3(2.1f * side, 7.25f, -23.1f), new Vector3(4.0f, 0.2f, 1.9f), white, false, new Vector3(0, 18f * side, 0));
+
+        foreach (var side in new[] { -1f, 1f })
+        {
+            // Cabin windows and livery.
+            for (float z = -1.6f; z > -17.5f; z -= 1.05f)
+            {
+                if (holdGap && side > 0 && z > -6.6f && z < -2.9f) continue; // the cargo door is here
+                Prim(PrimitiveType.Cube, "Window", t, new Vector3(1.36f * side, 2.88f, z), new Vector3(0.05f, 0.24f, 0.3f), glass);
+            }
+            Prim(PrimitiveType.Cube, "CheatLine", t, new Vector3(1.39f * side, 2.48f, -9f), new Vector3(0.04f, 0.14f, 22f), livery);
+            Text(airline, t, new Vector3(1.43f * side, 3.3f, -12f), new Vector3(0, -90f * side, 0), 0.45f, tailColor);
+
+            // Wings: swept inner and outer panels with dihedral, winglets.
+            Prim(PrimitiveType.Cube, "WingInner", t, new Vector3(3.9f * side, 2.05f, -10.2f), new Vector3(5.4f, 0.34f, 3.6f), white, true, new Vector3(0, 12f * side, -4f * side));
+            Prim(PrimitiveType.Cube, "WingOuter", t, new Vector3(8.9f * side, 2.35f, -11.6f), new Vector3(5.0f, 0.24f, 2.3f), white, true, new Vector3(0, 20f * side, -5f * side));
+            Prim(PrimitiveType.Cube, "Winglet", t, new Vector3(11.4f * side, 2.95f, -12.6f), new Vector3(0.14f, 1.15f, 1.0f), livery, false, new Vector3(-20, 0, -12f * side));
+            Prim(PrimitiveType.Cube, "FlapFairing", t, new Vector3(5.0f * side, 1.85f, -11.8f), new Vector3(0.22f, 0.22f, 1.6f), white);
+
+            // Engines: nacelle, intake lip, dark intake with spinner, exhaust cone, pylon.
+            Prim(PrimitiveType.Cylinder, "Engine", t, new Vector3(4.2f * side, 1.5f, -8.8f), new Vector3(1.3f, 1.5f, 1.3f), white, true, new Vector3(90, 0, 0));
+            Prim(PrimitiveType.Cylinder, "IntakeLip", t, new Vector3(4.2f * side, 1.5f, -7.3f), new Vector3(1.42f, 0.07f, 1.42f), darkGrey, false, new Vector3(90, 0, 0));
+            Prim(PrimitiveType.Cylinder, "Intake", t, new Vector3(4.2f * side, 1.5f, -7.26f), new Vector3(1.12f, 0.02f, 1.12f), glass, false, new Vector3(90, 0, 0));
+            Prim(PrimitiveType.Sphere, "Spinner", t, new Vector3(4.2f * side, 1.5f, -7.3f), Vector3.one * 0.35f, darkGrey);
+            Prim(PrimitiveType.Cylinder, "Exhaust", t, new Vector3(4.2f * side, 1.5f, -10.5f), new Vector3(0.85f, 0.3f, 0.85f), darkGrey, false, new Vector3(90, 0, 0));
+            Prim(PrimitiveType.Cube, "Pylon", t, new Vector3(4.2f * side, 2.0f, -9.3f), new Vector3(0.2f, 0.45f, 1.8f), white);
+
+            // Main gear: strut, brace, two wheels, door.
+            Prim(PrimitiveType.Cylinder, "MainStrut", t, new Vector3(2.2f * side, 1.0f, -10.5f), new Vector3(0.2f, 0.6f, 0.2f), grey);
+            Prim(PrimitiveType.Cylinder, "MainBrace", t, new Vector3(1.75f * side, 1.25f, -10.5f), new Vector3(0.09f, 0.5f, 0.09f), grey, false, new Vector3(0, 0, 40f * side));
+            Prim(PrimitiveType.Cube, "GearDoor", t, new Vector3(2.45f * side, 1.2f, -10.5f), new Vector3(0.04f, 0.8f, 0.9f), white);
+            foreach (var dx in new[] { -0.22f, 0.22f })
+                Prim(PrimitiveType.Cylinder, "MainWheel", t, new Vector3(2.2f * side + dx, 0.4f, -10.5f), new Vector3(0.8f, 0.1f, 0.8f), rubber, true, new Vector3(0, 0, 90));
+        }
+
+        // Nose gear sits on the root; this is also where the tug hooks up (no wheel colliders: the tug lives here).
+        Prim(PrimitiveType.Cylinder, "NoseStrut", t, new Vector3(0, 0.75f, 0), new Vector3(0.15f, 0.5f, 0.15f), grey);
+        Prim(PrimitiveType.Cube, "NoseGearDoor", t, new Vector3(0.3f, 1.05f, 0.1f), new Vector3(0.04f, 0.5f, 0.6f), white);
+        foreach (var dx in new[] { -0.16f, 0.16f })
+            Prim(PrimitiveType.Cylinder, "NoseWheel", t, new Vector3(dx, 0.3f, 0), new Vector3(0.6f, 0.08f, 0.6f), rubber, false, new Vector3(0, 0, 90));
+        Group("PushbackPoint", t, new Vector3(0, 0.3f, 0.6f));
+
+        // Collision shell: simple boxes and a capsule, so nothing drives through or under the aircraft.
+        ColliderBox("Col_Upper", t, new Vector3(0, 3.05f, -8.5f), new Vector3(2.8f, 1.5f, 25f));
+        if (holdGap)
+        {
+            ColliderBox("Col_BellyFwd", t, new Vector3(0, 1.6f, 0.25f), new Vector3(2.8f, 1.4f, 6.5f));
+            ColliderBox("Col_BellyAft", t, new Vector3(0, 1.6f, -13.25f), new Vector3(2.8f, 1.4f, 13.5f));
+            ColliderBox("Col_HoldBelly", t, new Vector3(0, 1.0f, -4.75f), new Vector3(2.0f, 0.2f, 3.5f));
+            ColliderBox("Col_HoldLeft", t, new Vector3(-1.2f, 1.6f, -4.75f), new Vector3(0.4f, 1.4f, 3.5f));
+        }
+        else ColliderBox("Col_Belly", t, new Vector3(0, 1.6f, -8.75f), new Vector3(2.8f, 1.4f, 24.5f));
+        // Behind the nose gear only, so the tug still fits under the nose; below the service panels.
+        ColliderBox("Col_UnderBelly", t, new Vector3(0, 0.425f, -11.5f), new Vector3(2.2f, 0.85f, 21f));
+        var nose = new GameObject("Col_Nose");
+        nose.transform.SetParent(t, false);
+        var noseCap = nose.AddComponent<CapsuleCollider>();
+        (noseCap.center, noseCap.radius, noseCap.height, noseCap.direction) = (new Vector3(0, 2.3f, 1.9f), 1.25f, 4.4f, 2);
+        ColliderBox("Col_TailCone", t, new Vector3(0, 2.6f, -22f), new Vector3(2.0f, 2.0f, 4.0f));
+        foreach (var side in new[] { -1f, 1f }) ColliderBox("Col_MainGear", t, new Vector3(2.2f * side, 0.7f, -10.5f), new Vector3(0.7f, 1.4f, 0.9f));
+        ColliderBox("Col_NoseGear", t, new Vector3(0, 0.75f, 0), new Vector3(0.35f, 0.8f, 0.35f));
     }
+
+    // ---------- airfield: runway, taxiways, perimeter, surroundings ----------
+    // Layout (world): apron z -30..100, taxiway A along z 85, runway 09/27 along z 160 (x -500..500).
+    // One-way flow: land eastbound, exit at A5 (x 260), taxi west along A to the gates; depart west to A1 (x -460),
+    // line up, take off eastbound. Nobody meets head-on.
+    public const float RunwayZ = 160f, TaxiwayZ = 85f, A1X = -460f, A5X = 260f;
+
+    static void BuildAirfield(Transform world)
+    {
+        var asphalt = Mat("Asphalt", Color.gray);
+        var runwayTop = Mat("RunwayAsphalt", new Color(0.19f, 0.19f, 0.2f), 0.1f, 0.06f, 60f);
+        var white = Mat("FadedWhite", Color.white);
+        var yellow = Mat("FadedYellow", Color.yellow);
+        var red = Flat("LightRed", new Color(0.9f, 0.15f, 0.1f));
+        var lamp = Flat("LightWhite", new Color(1f, 0.97f, 0.85f));
+        var blue = Flat("TaxiLight", new Color(0.2f, 0.4f, 1f));
+        var signYellow = Flat("SignYellow", new Color(0.95f, 0.8f, 0.15f));
+        var signRed = Flat("SignRed", new Color(0.75f, 0.1f, 0.08f));
+        var ink = new Color(0.08f, 0.08f, 0.08f);
+
+        var field = Group("Airfield", world);
+
+        // Runway 09/27.
+        var rw = Group("Runway0927", field);
+        Paint("Runway", rw, new Vector3(0, 0, RunwayZ), new Vector2(1000f, 45f), runwayTop, 0.0f);
+        foreach (var side in new[] { -1f, 1f })
+        {
+            Paint("EdgeLine", rw, new Vector3(0, 0, RunwayZ + 21.5f * side), new Vector2(1000f, 0.9f), white, 0.012f);
+            for (float x = -480f; x <= 480f; x += 60f)
+                Prim(PrimitiveType.Cube, "EdgeLight", rw, new Vector3(x, 0.2f, RunwayZ + 23.5f * side), new Vector3(0.3f, 0.3f, 0.3f), lamp);
+        }
+        for (float x = -440f; x <= 440f; x += 60f) Paint("CenterDash", rw, new Vector3(x, 0, RunwayZ), new Vector2(30f, 0.9f), white, 0.012f);
+        foreach (var end in new[] { -1f, 1f })
+        {
+            float x0 = 488f * end;
+            for (int i = 0; i < 6; i++)
+                foreach (var side in new[] { -1f, 1f })
+                    Paint("ThresholdBar", rw, new Vector3(x0, 0, RunwayZ + (3f + i * 3f) * side), new Vector2(24f, 1.8f), white, 0.012f);
+            foreach (float d in new[] { 110f, 170f, 230f }) // touchdown zone and aiming point marks
+                foreach (var side in new[] { -1f, 1f })
+                    Paint("TouchdownBar", rw, new Vector3((500f - d) * end, 0, RunwayZ + 9f * side), new Vector2(22f, d == 170f ? 4f : 1.8f), white, 0.012f);
+            for (float z = -20f; z <= 20f; z += 5f)
+                Prim(PrimitiveType.Cube, "EndLight", rw, new Vector3(500.5f * end, 0.2f, RunwayZ + z), new Vector3(0.3f, 0.3f, 0.3f), red);
+        }
+        Text("09", rw, new Vector3(-445f, 0.03f, RunwayZ), new Vector3(90, 90, 0), 12f, new Color(0.9f, 0.9f, 0.88f));
+        Text("27", rw, new Vector3(445f, 0.03f, RunwayZ), new Vector3(90, -90, 0), 12f, new Color(0.9f, 0.9f, 0.88f));
+
+        // Taxiway A (parallel), plus connectors A1 (runway entry) and A5 (exit).
+        var twy = Group("Taxiways", field);
+        Paint("TaxiwayA", twy, new Vector3(0, 0, TaxiwayZ), new Vector2(960f, 22f), asphalt, 0.0f);
+        Paint("CenterlineA", twy, new Vector3(0, 0, TaxiwayZ), new Vector2(960f, 0.3f), yellow, 0.013f);
+        for (float x = -470f; x <= 470f; x += 30f)
+            foreach (var side in new[] { -1f, 1f })
+                Prim(PrimitiveType.Cube, "EdgeLight", twy, new Vector3(x, 0.15f, TaxiwayZ + 11.5f * side), Vector3.one * 0.22f, blue);
+        foreach (var (name, x) in new[] { ("A1", A1X), ("A5", A5X) })
+        {
+            float z0 = TaxiwayZ + 11f, z1 = RunwayZ - 22.5f, mid = (z0 + z1) / 2f;
+            Paint("Connector" + name, twy, new Vector3(x, 0, mid), new Vector2(22f, z1 - z0 + 1f), asphalt, 0.001f);
+            Paint("Fillet" + name, twy, new Vector3(x, 0, TaxiwayZ), new Vector2(34f, 22f), asphalt, 0.0005f); // wider at the junction
+            Paint("Centerline" + name, twy, new Vector3(x, 0, (TaxiwayZ + RunwayZ) / 2f), new Vector2(0.3f, RunwayZ - TaxiwayZ), yellow, 0.013f);
+            // Runway holding position: two solid and two dashed lines across the taxiway.
+            float hz = RunwayZ - 38f;
+            for (int i = 0; i < 2; i++) Paint("HoldSolid", twy, new Vector3(x, 0, hz - 0.6f - i * 0.5f), new Vector2(22f, 0.3f), yellow, 0.014f);
+            for (float dx = -10f; dx <= 10f; dx += 2.5f)
+                for (int i = 0; i < 2; i++) Paint("HoldDash", twy, new Vector3(x + dx, 0, hz + 0.6f + i * 0.5f), new Vector2(1.4f, 0.3f), yellow, 0.014f);
+            for (float z = z0 + 5f; z < z1; z += 10f)
+                foreach (var side in new[] { -1f, 1f })
+                    Prim(PrimitiveType.Cube, "EdgeLight", twy, new Vector3(x + 11.5f * side, 0.15f, z), Vector3.one * 0.22f, blue);
+            // Signs: location (black on yellow) and the runway it guards (white on red).
+            var loc = Prim(PrimitiveType.Cube, "Sign" + name, twy, new Vector3(x - 15f, 0.7f, hz), new Vector3(1.8f, 0.9f, 0.25f), signYellow, true);
+            Text(name, loc.transform.parent, new Vector3(x - 15f, 0.7f, hz - 0.14f), Vector3.zero, 0.5f, ink);
+            Prim(PrimitiveType.Cube, "SignRwy" + name, twy, new Vector3(x - 17.2f, 0.7f, hz), new Vector3(2.4f, 0.9f, 0.25f), signRed, true);
+            Text("09-27", twy, new Vector3(x - 17.2f, 0.7f, hz - 0.14f), Vector3.zero, 0.42f, Color.white);
+        }
+
+        // Grass everywhere the apron isn't, a perimeter road and a fence.
+        Box("Grass", field, new Vector3(0, -1.01f, 150f), new Vector3(1300f, 2f, 520f), Mat("SadGrass", Color.green));
+        const float fx = 620f, fzMin = -100f, fzMax = 400f;
+        var fence = Mat("ChainLink", new Color(0.62f, 0.64f, 0.62f), 0.3f, 0.25f, 40f);
+        var post = Flat("FencePost", new Color(0.4f, 0.41f, 0.4f));
+        void FenceRun(Vector3 a, Vector3 b)
+        {
+            Vector3 mid = (a + b) / 2f;
+            float len = Vector3.Distance(a, b);
+            float yaw = Mathf.Atan2(b.x - a.x, b.z - a.z) * Mathf.Rad2Deg;
+            Box("Fence", field, mid + Vector3.up * 1.3f, new Vector3(0.08f, 2.6f, len), fence, new Vector3(0, yaw, 0));
+            for (float d = 0; d <= len; d += 50f) Prim(PrimitiveType.Cube, "Post", field, Vector3.MoveTowards(a, b, d) + Vector3.up * 1.4f, new Vector3(0.15f, 2.8f, 0.15f), post);
+        }
+        FenceRun(new Vector3(-fx, 0, fzMin), new Vector3(fx, 0, fzMin));
+        FenceRun(new Vector3(-fx, 0, fzMax), new Vector3(fx, 0, fzMax));
+        FenceRun(new Vector3(-fx, 0, fzMin), new Vector3(-fx, 0, fzMax));
+        FenceRun(new Vector3(fx, 0, fzMin), new Vector3(fx, 0, fzMax));
+        Paint("PerimeterRoadS", field, new Vector3(0, 0, fzMin + 10f), new Vector2(2 * fx - 20f, 6f), asphalt, 0.001f);
+        Paint("PerimeterRoadN", field, new Vector3(0, 0, fzMax - 10f), new Vector2(2 * fx - 20f, 6f), asphalt, 0.001f);
+        Paint("PerimeterRoadW", field, new Vector3(-fx + 10f, 0, (fzMin + fzMax) / 2f), new Vector2(6f, fzMax - fzMin - 20f), asphalt, 0.001f);
+        Paint("PerimeterRoadE", field, new Vector3(fx - 10f, 0, (fzMin + fzMax) / 2f), new Vector2(6f, fzMax - fzMin - 20f), asphalt, 0.001f);
+        Paint("AccessRoad", field, new Vector3(-75f, 0, -60f), new Vector2(6f, 80f), asphalt, 0.001f);
+
+        // Buildings: a cargo hangar west, a maintenance hangar east, a fuel farm, and the tower.
+        var hangarWall = Mat("HangarWall", new Color(0.55f, 0.58f, 0.6f), 0.12f, 0.06f, 8f);
+        var hangarRoof = Mat("HangarRoof", new Color(0.4f, 0.43f, 0.47f), 0.1f, 0.05f, 8f);
+        var doorDark = Flat("HangarDoor", new Color(0.22f, 0.24f, 0.26f));
+        foreach (var (name, pos, label) in new[] { ("CargoHangar", new Vector3(-250f, 0, 20f), "CARGO"), ("MaintHangar", new Vector3(200f, 0, 15f), "MRO") })
+        {
+            var h = Group(name, field, pos);
+            Box("Walls", h, new Vector3(0, 7f, 0), new Vector3(48f, 14f, 34f), hangarWall);
+            Prim(PrimitiveType.Cylinder, "ArchRoof", h, new Vector3(0, 14f, 0), new Vector3(20f, 24f, 34f), hangarRoof, false, new Vector3(0, 0, 90)); // axis along the hangar, 10 m of arch above the walls
+            Prim(PrimitiveType.Cube, "Door", h, new Vector3(0, 6f, 17.05f), new Vector3(40f, 12f, 0.2f), doorDark);
+            Text(label, h, new Vector3(0, 12.6f, 17.2f), new Vector3(0, 180, 0), 2.4f, new Color(0.95f, 0.95f, 0.9f));
+        }
+        var tank = Mat("FuelTank", new Color(0.82f, 0.82f, 0.78f), 0.08f, 0.04f);
+        for (int i = 0; i < 3; i++)
+            Box("FuelTank", field, new Vector3(330f + i * 22f, 5f, -50f), new Vector3(16f, 10f, 16f), tank).GetComponent<MeshFilter>().sharedMesh = PrimMesh(PrimitiveType.Cylinder);
+
+        BuildTower(field, new Vector3(-108f, 0, -14f));
+        BuildDistantTown(world);
+        BuildHills(world, fx, fzMin, fzMax);
+    }
+
+    static Mesh PrimMesh(PrimitiveType type)
+    {
+        var tmp = GameObject.CreatePrimitive(type);
+        var mesh = tmp.GetComponent<MeshFilter>().sharedMesh;
+        Object.DestroyImmediate(tmp);
+        return mesh;
+    }
+
+    // Control tower: plain shaft, a dark glass cab with mullions, overhanging roof, antenna with a red light.
+    static void BuildTower(Transform parent, Vector3 pos)
+    {
+        var concrete = Mat("TowerConcrete", new Color(0.72f, 0.72f, 0.69f), 0.1f, 0.05f, 4f);
+        var cabGlass = Flat("TowerGlass", new Color(0.12f, 0.2f, 0.26f));
+        var trim = Flat("TowerTrim", new Color(0.3f, 0.32f, 0.34f));
+        var t = Group("ATCTower", parent, pos);
+        Box("Base", t, new Vector3(0, 3f, 0), new Vector3(14f, 6f, 10f), concrete);
+        Prim(PrimitiveType.Cylinder, "Shaft", t, new Vector3(0, 18f, 0), new Vector3(5f, 15f, 5f), concrete, true);
+        Prim(PrimitiveType.Cylinder, "CabFloor", t, new Vector3(0, 33.5f, 0), new Vector3(9.5f, 0.75f, 9.5f), trim);
+        Prim(PrimitiveType.Cylinder, "CabGlass", t, new Vector3(0, 35.6f, 0), new Vector3(10.2f, 1.4f, 10.2f), cabGlass);
+        for (int i = 0; i < 8; i++)
+        {
+            float a = i * 45f * Mathf.Deg2Rad;
+            Prim(PrimitiveType.Cube, "Mullion", t, new Vector3(Mathf.Sin(a) * 5.1f, 35.6f, Mathf.Cos(a) * 5.1f), new Vector3(0.25f, 2.8f, 0.25f), trim);
+        }
+        Prim(PrimitiveType.Cylinder, "Roof", t, new Vector3(0, 37.3f, 0), new Vector3(11.6f, 0.3f, 11.6f), trim);
+        Prim(PrimitiveType.Cylinder, "Antenna", t, new Vector3(1.5f, 40f, 0), new Vector3(0.25f, 2.5f, 0.25f), trim);
+        Prim(PrimitiveType.Cube, "AntennaLight", t, new Vector3(1.5f, 42.6f, 0), Vector3.one * 0.5f, Flat("LightRed", Color.red));
+        Prim(PrimitiveType.Cube, "Radar", t, new Vector3(-2.5f, 38.6f, 0), new Vector3(3f, 0.6f, 0.4f), trim, false, new Vector3(0, 30, 0));
+    }
+
+    // A few dozen flat-coloured blocks behind the terminal, past the fence: no colliders, fogged out.
+    static void BuildDistantTown(Transform world)
+    {
+        var town = Group("DistantTown", world);
+        var rng = new Random(77);
+        Color[] tints = { new(0.6f, 0.58f, 0.55f), new(0.52f, 0.55f, 0.6f), new(0.66f, 0.62f, 0.55f), new(0.45f, 0.47f, 0.5f) };
+        for (int i = 0; i < 46; i++)
+        {
+            float x = (float)(rng.NextDouble() * 1100 - 550), z = (float)(-180 - rng.NextDouble() * 260);
+            float w = 12f + (float)rng.NextDouble() * 22f, d = 12f + (float)rng.NextDouble() * 22f;
+            float h = 6f + (float)Math.Pow(rng.NextDouble(), 2.2) * 45f;
+            Prim(PrimitiveType.Cube, "Building", town, new Vector3(x, h / 2f, z), new Vector3(w, h, d), Flat($"Town{i % 4}", tints[i % 4]));
+        }
+    }
+
+    // Rolling hills outside the fence (visual only). Flat (and hidden under the grass) inside the airport.
+    static void BuildHills(Transform world, float fx, float fzMin, float fzMax)
+    {
+        const int n = 72;
+        const float size = 3600f;
+        var verts = new Vector3[(n + 1) * (n + 1)];
+        var uvs = new Vector2[verts.Length];
+        for (int j = 0; j <= n; j++)
+            for (int i = 0; i <= n; i++)
+            {
+                float x = -size / 2 + size * i / n, z = 150f - size / 2 + size * j / n;
+                float dx = Mathf.Max(0f, Mathf.Abs(x) - fx), dz = Mathf.Max(0f, Mathf.Max(fzMin - z, z - fzMax));
+                float outside = Mathf.Sqrt(dx * dx + dz * dz);
+                float mask = Mathf.SmoothStep(0f, 1f, (outside - 30f) / 420f);
+                float h = (Mathf.PerlinNoise(x * 0.0018f + 3f, z * 0.0018f + 7f) * 70f + Mathf.PerlinNoise(x * 0.007f, z * 0.007f) * 14f) * mask;
+                verts[j * (n + 1) + i] = new Vector3(x, outside < 10f ? -2f : h - 1.5f * (1f - mask), z);
+                uvs[j * (n + 1) + i] = new Vector2(x, z) / 25f;
+            }
+        var tris = new int[n * n * 6];
+        for (int j = 0, k = 0; j < n; j++)
+            for (int i = 0; i < n; i++, k += 6)
+            {
+                int a = j * (n + 1) + i, b = a + 1, c = a + n + 1, d = c + 1;
+                (tris[k], tris[k + 1], tris[k + 2], tris[k + 3], tris[k + 4], tris[k + 5]) = (a, c, b, b, c, d);
+            }
+        var mesh = new Mesh { name = "Hills", vertices = verts, uv = uvs, triangles = tris };
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        const string path = "Assets/Art/Hills.asset";
+        AssetDatabase.DeleteAsset(path);
+        AssetDatabase.CreateAsset(mesh, path);
+        var go = new GameObject("Hills");
+        go.transform.SetParent(world, false);
+        go.AddComponent<MeshFilter>().sharedMesh = mesh;
+        var r = go.AddComponent<MeshRenderer>();
+        r.sharedMaterial = Mat("HillGrass", new Color(0.32f, 0.39f, 0.22f), 0.22f, 0.12f);
+        r.shadowCastingMode = ShadowCastingMode.Off;
+    }
+
 }

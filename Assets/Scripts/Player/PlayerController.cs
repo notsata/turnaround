@@ -136,6 +136,7 @@ namespace Turnaround.Player
             seatTarget = null;
             velocity = Vector3.zero;
             Teleport(basePos + side * (1.5f * (OwnerClientId % 4)), spawn ? spawn.transform.rotation : Quaternion.identity);
+            Debug.Log($"[TURNAROUND] To the {(lobby ? "lobby" : "ramp")} at {transform.position}");
         }
 
         public void Teleport(Vector3 position, Quaternion rotation)
@@ -210,7 +211,12 @@ namespace Turnaround.Player
 
             if (Sitting)
             {
-                if (x != 0f || y != 0f || jumpPressed || seatTarget == null) sitting.Value = false; // get up by moving
+                if (x != 0f || y != 0f || jumpPressed || seatTarget == null)
+                {
+                    sitting.Value = false; // get up by moving, onto the floor in front of the seat (the seat point is below it)
+                    if (seatTarget != null) Teleport(seatTarget.TransformPoint(0f, 0.4f, 0.7f), transform.rotation);
+                    seatTarget = null;
+                }
                 else
                 {
                     cc.enabled = false;

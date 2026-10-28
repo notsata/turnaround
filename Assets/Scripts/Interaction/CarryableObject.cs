@@ -33,6 +33,7 @@ namespace Turnaround.Interaction
         ulong lastThrower = ulong.MaxValue; // host only: who to blame, and who not to knock over on release
 
         public bool IsHeld => holderId.Value != NoHolder;
+        public Rigidbody Body => rb;
         public PlayerInteraction Holder => holder;
         public Quaternion HeldTwist { get; set; } = Quaternion.identity; // extra rotation while held (melee swing)
         public bool IsPinned => pinned.Value;

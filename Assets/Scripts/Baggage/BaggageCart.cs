@@ -200,6 +200,8 @@ namespace Turnaround.Baggage
             return false;
         }
 
+        public void ServerClearFaults() => runawayUntil = 0f;
+
         public void ServerRunaway(Vector3 direction, float seconds = 15f)
         {
             if (!IsServer || IsHitched) return;

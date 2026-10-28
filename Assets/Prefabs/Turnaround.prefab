@@ -9,6 +9,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 6997761490251537026}
+  - component: {fileID: 5771760083952886106}
+  - component: {fileID: 7154774594286061157}
   - component: {fileID: 7941152335485889003}
   - component: {fileID: 1595895060729137046}
   - component: {fileID: 8822482629869323938}
@@ -38,6 +40,38 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &5771760083952886106
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7213780198880338992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 669726261184dd649abe3a73082cc42b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Turnaround.Aircraft.TrafficManager
+  trafficPrefab: {fileID: 8213999856091902661, guid: 44b852e1092a1d34ab75548900afb33f, type: 3}
+  gates:
+  - 36
+  - 60
+  maxAircraft: 2
+  spawnGap: {x: 45, y: 100}
+  parkTime: {x: 60, y: 120}
+--- !u!114 &7154774594286061157
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7213780198880338992}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b4adf88ecc0753240bb35ec59ff59811, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Turnaround.Tasks.ShiftManager
+  ShowTopMostFoldoutHeaderGroup: 1
 --- !u!114 &7941152335485889003
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -220,6 +220,12 @@ namespace Turnaround.Company
             var (gpuDef, gpuWear) = Owned(EquipmentKind.Gpu);
             if (gpu != null && gpuDef != null) gpu.reliability = Mathf.Clamp01(gpuDef.reliability * gpuWear);
 
+            while (boughtCarts.Count > state.extraCarts) // bankruptcy repossessed them
+            {
+                var last = boughtCarts[^1];
+                boughtCarts.RemoveAt(boughtCarts.Count - 1);
+                if (last != null && last.IsSpawned) last.Despawn();
+            }
             while (boughtCarts.Count < Mathf.Min(state.extraCarts, extraCartSpots.Length))
             {
                 var cart = Instantiate(cartPrefab, extraCartSpots[boughtCarts.Count], Quaternion.identity).GetComponent<NetworkObject>();
@@ -313,6 +319,7 @@ namespace Turnaround.Company
             RadioManager.Say("OPS", "Bankruptcy filed. New company, same people. Same equipment, somehow.");
             Publish();
             ServerApplyEquipment();
+            Tasks.RunReset.ServerResetRun();
         }
     }
 }

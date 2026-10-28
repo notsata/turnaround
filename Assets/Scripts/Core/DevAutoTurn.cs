@@ -28,6 +28,7 @@ namespace Turnaround.Core
             while (PlayerController.Local == null) yield return null;
             me = PlayerController.Local;
             hands = me.GetComponent<PlayerInteraction>();
+            yield return LobbyTest();
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-stresstest") >= 0)
             {
                 yield return StressTest();
@@ -179,6 +180,44 @@ namespace Turnaround.Core
             yield return new WaitForSeconds(2f);
             Log($"second flight parked: {TurnaroundManager.Instance.Airline} {ac.FlightNumber}, inbound {bags.InboundTotal}, outbound {bags.OutboundTotal}, " +
                 $"tasks complete {TaskManager.Instance.CompletedCount}, door open={cargoDoor.IsOpen}");
+            yield return BankruptcyTest(ac);
+        }
+
+        // Before the shift: in the lobby, sit down, then the host presses the big red button and everyone goes to the ramp.
+        IEnumerator LobbyTest()
+        {
+            while (ShiftManager.Instance == null) yield return null;
+            yield return new WaitForSeconds(1f);
+            Log($"lobby: inLobby={ShiftManager.InLobby} me at {me.transform.position}");
+            var chair = FindFirstObjectByType<Chair>();
+            yield return Use(chair.transform.position, chair);
+            yield return new WaitForSeconds(0.5f);
+            Log($"chair: sitting={me.Sitting} at {me.transform.position} (seat {chair.seat.position})");
+            var button = FindFirstObjectByType<StartShiftButton>();
+            yield return Use(button.transform.position, button, button.transform.position + new Vector3(0f, -1.02f, -1.2f));
+            yield return new WaitForSeconds(1.5f);
+            Log($"shift started: inLobby={ShiftManager.InLobby} sitting={me.Sitting} me at {me.transform.position}");
+        }
+
+        // Bankruptcy: everything goes back where the first shift found it, and everyone back to the lobby.
+        IEnumerator BankruptcyTest(AircraftController ac)
+        {
+            var tractor = VehicleController.All.First(v => v.kind == Company.EquipmentKind.Tractor);
+            Vector3 home = tractor.transform.position;
+            Place(tractor.transform, home + new Vector3(15f, 0f, 20f));
+            var chock = Items(CarryKind.Chock)[0];
+            Vector3 chockHome = chock.transform.position;
+            Place(chock.transform, new Vector3(5f, 0.5f, 40f));
+            yield return new WaitForSeconds(1f);
+            var company = CompanyManager.Instance;
+            company.NewCompanyRpc();
+            yield return new WaitForSeconds(2f);
+            Log($"bankrupt: inLobby={ShiftManager.InLobby} me at {me.transform.position}, money ${company.State.money}, contracts {company.State.contracts.Count}, " +
+                $"tractor {Vector3.Distance(tractor.transform.position, home):F2} m from home, chock {Vector3.Distance(chock.transform.position, chockHome):F2} m, " +
+                $"aircraft {ac.State} hold={ac.HoldArrival}, bags {BaggageItem.All.Count}, carts {BaggageCart.All.Count}, report empty={TurnaroundManager.Instance.Report.Length == 0}");
+            ShiftManager.Instance.ServerStartShift();
+            yield return new WaitForSeconds(2f);
+            Log($"after restart: inLobby={ShiftManager.InLobby} me at {me.transform.position}");
         }
 
         // Repro for "the belt loader flies away when you get in": board it and watch it for a few seconds.
