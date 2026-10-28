@@ -10,7 +10,7 @@ namespace Turnaround.Equipment
     // Sits on the belt itself (the belt's forward = uphill). Host drags rigidbodies in carryZone up the slope;
     // players riding it get pushed by their own PlayerController via SurfaceVelocity.
     [RequireComponent(typeof(BoxCollider))]
-    public class BeltLoader : NetworkBehaviour, IInteractable
+    public class BeltLoader : NetworkBehaviour, IInteractable, ISurfaceMotion
     {
         public float beltSpeed = 1.6f;
         public BoxCollider carryZone;

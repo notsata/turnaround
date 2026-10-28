@@ -266,6 +266,8 @@ MonoBehaviour:
   displayName: GPU Cable
   weight: 0
   kind: 4
+  heldInHand: 0
+  heldEuler: {x: 0, y: 0, z: 0}
 --- !u!120 &5373236296802594838
 LineRenderer:
   serializedVersion: 2

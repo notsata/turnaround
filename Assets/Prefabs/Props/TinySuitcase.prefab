@@ -177,6 +177,8 @@ MonoBehaviour:
   displayName: Tiny Suitcase
   weight: 0
   kind: 1
+  heldInHand: 0
+  heldEuler: {x: 0, y: 0, z: 0}
 --- !u!114 &8871279547281136500
 MonoBehaviour:
   m_ObjectHideFlags: 0

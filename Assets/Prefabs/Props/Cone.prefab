@@ -444,6 +444,8 @@ MonoBehaviour:
   displayName: Safety Cone
   weight: 0
   kind: 2
+  heldInHand: 0
+  heldEuler: {x: 0, y: 0, z: 0}
 --- !u!1 &6704824141985040202
 GameObject:
   m_ObjectHideFlags: 0

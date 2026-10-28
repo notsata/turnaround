@@ -17,7 +17,7 @@ namespace Turnaround.Events
         {
             float impact = collision.relativeVelocity.magnitude;
             if (impact > ImpossibleSpeed) return;
-            var player = collision.collider.GetComponentInParent<PlayerController>();
+            var player = PlayerController.FromCollider(collision.collider);
             if (player != null)
             {
                 if (player.Vehicle != null || impact < KnockdownSpeed) return;
@@ -41,7 +41,7 @@ namespace Turnaround.Events
             Vector3 away = player.transform.position - from;
             away.y = 0f;
             away = away.sqrMagnitude > 0.01f ? away.normalized : -player.transform.forward;
-            player.GetComponent<PlayerRagdoll>().ServerKnockDown(away * (impact * 1.1f) + Vector3.up * Mathf.Min(3f + impact * 0.5f, 9f));
+            player.GetComponent<PlayerRagdoll>().ServerKnockDown(away * Mathf.Min(impact * 1.1f, 9f) + Vector3.up * Mathf.Min(2.5f + impact * 0.4f, 6f));
         }
     }
 }

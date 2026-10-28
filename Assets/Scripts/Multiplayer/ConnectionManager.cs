@@ -36,6 +36,9 @@ namespace Turnaround.Multiplayer
         public static void Leave(string reason = null)
         {
             LastDisconnectReason = reason;
+            // The ramp locks the mouse; make sure whoever ends up on the menu (host left, kicked, quit) gets it back.
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
             if (Net != null)
             {
                 Net.Shutdown();

@@ -88,6 +88,15 @@ namespace Turnaround.Player
                 return;
             }
 
+            var melee = Held != null ? Held.GetComponent<MeleeWeapon>() : null;
+            if (melee != null)
+            {
+                Prompt = $"{Held.displayName}\n[LMB] Swing    [G] Drop";
+                if (mouse.leftButton.wasPressedThisFrame) melee.TrySwing(cameraPivot);
+                else if (kb.gKey.wasPressedThisFrame) Throw(0f);
+                return;
+            }
+
             if (Held != null)
             {
                 Prompt = $"{Held.Description}\n[LMB] Hold to throw    [G] Drop";

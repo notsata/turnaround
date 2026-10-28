@@ -28,6 +28,11 @@ namespace Turnaround.Core
             while (PlayerController.Local == null) yield return null;
             me = PlayerController.Local;
             hands = me.GetComponent<PlayerInteraction>();
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-stresstest") >= 0)
+            {
+                yield return StressTest();
+                yield break;
+            }
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-testbelt") >= 0)
             {
                 yield return BeltLoaderTest();
@@ -190,6 +195,188 @@ namespace Turnaround.Core
                     $"player y={me.transform.position.y:F2} ccEnabled={me.GetComponent<CharacterController>().enabled}");
                 yield return new WaitForSeconds(0.25f);
             }
+        }
+
+        // ---------- physics stress test: everything that used to launch, bury or fling things ----------
+
+        float maxHeight;
+        string maxWho;
+        readonly System.Collections.Generic.HashSet<string> warned = new();
+
+        void Track()
+        {
+            foreach (var v in VehicleController.All) Note(v.transform.position.y, v.displayName);
+            foreach (var c in BaggageCart.All) Note(c.transform.position.y, $"{c.displayName} {c.NetworkObjectId} at {c.transform.position} hitched={c.IsHitched}");
+        }
+
+        void Note(float y, string who)
+        {
+            if (y > maxHeight + 0.5f) Log($"   new max height {y:F2}: {who} at t={Time.time:F1}");
+            if (y > maxHeight) (maxHeight, maxWho) = (y, who);
+            if (y < -1f && warned.Add(who.Split(' ')[0] + who.Split(' ')[1])) Log($"!! {who} is underground at y={y:F2}");
+        }
+
+        IEnumerator Watch(float seconds)
+        {
+            for (float t = 0; t < seconds; t += Time.deltaTime)
+            {
+                Track();
+                yield return null;
+            }
+        }
+
+        IEnumerator StressTest()
+        {
+            yield return new WaitForSeconds(3f);
+            var tractor = VehicleController.All.First(v => v.kind == Company.EquipmentKind.Tractor);
+            var tractorRb = tractor.GetComponent<Rigidbody>();
+            var cart = BaggageCart.All.First(c => c.displayName == "Baggage Cart");
+
+            // 0. Ram the parked equipment row: the old way carts ended up stacked on things.
+            tractor.transform.rotation = Quaternion.LookRotation(Vector3.left);
+            Place(tractor.transform, new Vector3(-22f, 0f, 17f), 0.05f);
+            yield return new WaitForSeconds(0.3f);
+            yield return Use(tractor.seatAnchor.position, tractor, tractor.exitPoint.position);
+            for (float t = 0; t < 5f; t += Time.deltaTime)
+            {
+                tractor.SendInput(1f, 0f, false);
+                Track();
+                yield return null;
+            }
+            tractor.SendInput(0f, 0f, true);
+            yield return Watch(2f);
+            tractor.RequestExit();
+            yield return new WaitForSeconds(0.6f);
+            Log($"0. rammed the parked row at full speed: max height {maxHeight:F2} ({maxWho})");
+
+            // 1. Hitch/unhitch the same cart 20 times right behind the tractor, out in open space.
+            cart.transform.rotation = Quaternion.identity;
+            Place(cart.transform, new Vector3(-20f, 0f, 40f), 0.05f);
+            tractor.transform.rotation = Quaternion.identity;
+            Place(tractor.transform, cart.tongueTip.position + Vector3.forward * 3f, 0.05f);
+            yield return new WaitForSeconds(1f);
+            int hitched = 0;
+            for (int i = 0; i < 20; i++)
+            {
+                yield return Use(cart.transform.position, cart, cart.transform.position + cart.transform.right * 1.8f); // beside it, like a person
+                if (cart.IsHitched) hitched++;
+                yield return Watch(0.2f);
+            }
+            Log($"1. hitch toggles: {hitched}/10 hitched states seen, tractor y={tractor.transform.position.y:F2}, max height so far {maxHeight:F2} ({maxWho})");
+
+            // 2. Tow it in tight circles at full speed, then slam the brakes.
+            if (!cart.IsHitched) yield return Use(cart.transform.position, cart);
+            yield return Use(tractor.seatAnchor.position, tractor, tractor.exitPoint.position);
+            for (float t = 0; t < 6f; t += Time.deltaTime)
+            {
+                tractor.SendInput(1f, t < 3f ? 1f : -1f, false);
+                Track();
+                yield return null;
+            }
+            tractor.SendInput(0f, 0f, true);
+            yield return Watch(2f);
+            Log($"2. towing: hitched={cart.IsHitched}, tongue-to-tractor {Vector3.Distance(cart.tongueTip.position, tractor.transform.position):F1} m, max height {maxHeight:F2} ({maxWho})");
+
+            // 3. Ram the parked aircraft at full throttle: fuselage side, main gear, tail.
+            AircraftController ac = null;
+            while (ac == null || !ac.IsStationary)
+            {
+                ac = FindFirstObjectByType<AircraftController>();
+                yield return null;
+            }
+            tractor.RequestExit();
+            yield return new WaitForSeconds(0.5f);
+            if (cart.IsHitched) yield return Use(cart.transform.position, cart);
+            yield return Use(tractor.seatAnchor.position, tractor, tractor.exitPoint.position);
+            var runs = new[] { (new Vector3(14f, 0f, -5f), new Vector3(0f, 0f, -5f), "fuselage"), (new Vector3(12f, 0f, -10.5f), new Vector3(0f, 0f, -10.5f), "main gear"), (new Vector3(0f, 0f, -38f), new Vector3(0f, 0f, -15f), "tail") };
+            foreach (var (from, to, name) in runs)
+            {
+                Vector3 start = ac.transform.TransformPoint(from), target = ac.transform.TransformPoint(to);
+                tractor.transform.rotation = Quaternion.LookRotation(target - start);
+                Place(tractor.transform, start, 0.05f);
+                tractorRb.linearVelocity = Vector3.zero;
+                yield return new WaitForSeconds(0.3f);
+                for (float t = 0; t < 5f; t += Time.deltaTime)
+                {
+                    tractor.SendInput(1f, 0f, false);
+                    Track();
+                    yield return null;
+                }
+                tractor.SendInput(0f, 0f, true);
+                Vector3 inPlane = ac.transform.InverseTransformPoint(tractor.transform.position);
+                bool inside = Mathf.Abs(inPlane.x) < 1.2f && inPlane.z < 3f && inPlane.z > -21f;
+                Log($"3. rammed {name}: tractor ended {(inside ? "INSIDE the fuselage" : "outside")} at local ({inPlane.x:F1},{inPlane.y:F1},{inPlane.z:F1}), max height {maxHeight:F2}");
+                yield return new WaitForSeconds(0.5f);
+            }
+            tractor.RequestExit();
+            yield return new WaitForSeconds(0.6f);
+
+            // 4. Rapid full-power throws while looking straight down (used to fling the thrower).
+            me.cameraPivot.localRotation = Quaternion.Euler(85f, 0f, 0f);
+            var bag = Items(CarryKind.Cone)[0];
+            Vector3 throwSpot = me.transform.position;
+            float worstDrift = 0f;
+            for (int i = 0; i < 15; i++)
+            {
+                Place(bag.transform, me.transform.position + me.transform.forward * 1.2f);
+                yield return new WaitForSeconds(0.15f);
+                bag.Interact(hands);
+                yield return new WaitForSeconds(0.15f);
+                if (hands.Held != null) hands.Held.ThrowRpc(me.cameraPivot.forward, 1f);
+                yield return new WaitForSeconds(0.25f);
+                worstDrift = Mathf.Max(worstDrift, Vector3.Distance(me.transform.position, throwSpot));
+            }
+            me.cameraPivot.localRotation = Quaternion.identity;
+            Log($"4. 15 downward throws: thrower moved at most {worstDrift:F2} m, knocked down={me.GetComponent<PlayerRagdoll>().IsDown}");
+
+            // 5. Hammer the other crew member repeatedly; they must always get back up above ground.
+            var victim = PlayerController.All.FirstOrDefault(p => p != me);
+            var hammer = Items(CarryKind.Tool).First(t => t.displayName == "Sledgehammer");
+            yield return Use(hammer.transform.position, hammer);
+            var melee = hammer.GetComponent<MeleeWeapon>();
+            int hits = 0;
+            for (int i = 0; i < 4 && victim != null; i++)
+            {
+                while (victim.GetComponent<PlayerRagdoll>().IsDown) yield return null; // let them get back up first
+                yield return new WaitForSeconds(0.6f);
+                Vector3 at = victim.transform.position - victim.transform.forward * 1.3f;
+                me.Teleport(new Vector3(at.x, victim.transform.position.y, at.z), Quaternion.LookRotation(Vector3.ProjectOnPlane(victim.transform.position - at, Vector3.up)));
+                me.cameraPivot.localRotation = Quaternion.identity;
+                yield return new WaitForSeconds(0.3f);
+                melee.TrySwing(me.cameraPivot);
+                yield return new WaitForSeconds(1.2f);
+                if (victim.GetComponent<PlayerRagdoll>().IsDown) hits++;
+            }
+            yield return new WaitForSeconds(4f);
+            Log($"5. hammer: {hits}/4 swings knocked the victim down; victim now down={victim?.GetComponent<PlayerRagdoll>().IsDown}, y={victim?.transform.position.y:F2}");
+
+            // 6. Shove unattended equipment: walking bumps barely move it, the hammer nudges it, nothing flies.
+            var gpu = BaggageCart.All.First(c => c.kind == Company.EquipmentKind.Gpu);
+            Log($"   GPU candidates: {string.Join(", ", BaggageCart.All.Select(c => $"{c.displayName}/{c.kind}/{c.NetworkObjectId}"))}");
+            tractor.transform.rotation = Quaternion.identity; // open space, nothing in front
+            Place(tractor.transform, new Vector3(-10f, 0f, 30f), 0.05f);
+            gpu.transform.rotation = Quaternion.identity;
+            Place(gpu.transform, new Vector3(-4f, 0f, 30f), 0.05f);
+            yield return new WaitForSeconds(1f);
+            Vector3 tractorStart = tractor.transform.position, gpuStart = gpu.transform.position;
+            for (int i = 0; i < 25; i++) // along the wheels; sideways the tyres (rightly) won't budge
+            {
+                tractor.Push(tractor.transform.forward * 4.5f);
+                gpu.Push(gpu.transform.forward * 4.5f);
+                yield return Watch(0.25f);
+            }
+            Log($"6a. 25 walking shoves: tractor moved {Vector3.Distance(tractorStart, tractor.transform.position):F2} m, GPU moved {Vector3.Distance(gpuStart, gpu.transform.position):F2} m (GPU {gpu.NetworkObjectId} {gpuStart} -> {gpu.transform.position}, hitched={gpu.IsHitched})");
+            Vector3 beforeHammer = tractor.transform.position;
+            for (int i = 0; i < 4; i++)
+            {
+                Vector3 at = tractor.transform.position - tractor.transform.forward * 2.6f;
+                me.Teleport(new Vector3(at.x, 0.1f, at.z), Quaternion.LookRotation(Vector3.ProjectOnPlane(tractor.transform.forward, Vector3.up)));
+                yield return new WaitForSeconds(0.2f);
+                melee.TrySwing(me.cameraPivot);
+                yield return Watch(1.2f);
+            }
+            Log($"6b. 4 hammer hits: tractor moved {Vector3.Distance(beforeHammer, tractor.transform.position):F2} m; overall max height {maxHeight:F2} ({maxWho})");
+            Log("stress test done");
         }
 
         const Company.EquipmentKind EquipmentKindBelt = Company.EquipmentKind.BeltLoader;

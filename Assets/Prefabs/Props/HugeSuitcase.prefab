@@ -266,6 +266,8 @@ MonoBehaviour:
   displayName: Comically Huge Suitcase
   weight: 2
   kind: 1
+  heldInHand: 0
+  heldEuler: {x: 0, y: 0, z: 0}
 --- !u!114 &4737901573282395505
 MonoBehaviour:
   m_ObjectHideFlags: 0

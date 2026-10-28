@@ -43,19 +43,9 @@ namespace Turnaround.Player
             speed = Mathf.Lerp(speed, new Vector3(delta.x, 0f, delta.z).magnitude, dt * 10f);
             verticalSpeed = Mathf.Lerp(verticalSpeed, delta.y, dt * 10f);
 
-            if (ragdoll.IsDown)
-            {
-                // Flat on your back, everything flailing.
-                float t = Time.time;
-                body.localRotation = Quaternion.Euler(-85f, Mathf.Sin(t * 2f) * 15f, Mathf.Sin(t * 3f) * 20f);
-                armL.localRotation = Quaternion.Euler(Mathf.Sin(t * 14f) * 60f, 0f, -110f);
-                armR.localRotation = Quaternion.Euler(Mathf.Sin(t * 13f + 1f) * 60f, 0f, 110f);
-                legL.localRotation = Quaternion.Euler(Mathf.Sin(t * 12f) * 45f, 0f, -20f);
-                legR.localRotation = Quaternion.Euler(Mathf.Sin(t * 11f + 2f) * 45f, 0f, 20f);
-                return;
-            }
+            if (ragdoll.IsDown || ragdoll.HasBody) return; // physics owns the limbs right now
 
-            if (controller.Vehicle != null)
+            if (controller.Vehicle != null || controller.Sitting)
             {
                 // Seated: knees up, both hands on the wheel, slight anxious bob.
                 legL.localRotation = legR.localRotation = Quaternion.Euler(-85f, 0f, 0f);
@@ -69,11 +59,19 @@ namespace Turnaround.Player
             float s = Mathf.Sin(phase);
             bool airborne = Mathf.Abs(verticalSpeed) > 1f;
             var held = interaction.Held;
+            var melee = held != null ? held.GetComponent<MeleeWeapon>() : null;
 
             // Arms swing way too far, more when sprinting.
             float armSwing = s * Mathf.Min(speed * 14f, 95f);
             float legSwing = s * Mathf.Min(speed * 9f, 45f);
-            if (held != null)
+            if (melee != null)
+            {
+                // Two-handed chop: wind back, then bring it down hard; the off hand helps a bit.
+                float chop = melee.SwingPose; // -1 wound back .. +1 follow-through
+                armR.localRotation = Quaternion.Euler(-100f + chop * 70f, 0f, 10f);
+                armL.localRotation = Quaternion.Euler(-80f + chop * 50f, 0f, -20f);
+            }
+            else if (held != null)
             {
                 float reach = held.weight == CarryWeight.Heavy ? -60f : -80f;
                 armL.localRotation = Quaternion.Euler(reach + s * 6f, 0f, -8f);

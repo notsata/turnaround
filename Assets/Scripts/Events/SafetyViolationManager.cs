@@ -45,7 +45,6 @@ namespace Turnaround.Events
         readonly Dictionary<ViolationKind, int> byKind = new(); // host only, for the report
         readonly Dictionary<(ViolationKind, ulong), float> nextAllowed = new();
         readonly Dictionary<ulong, Vector3> lastPositions = new();
-        readonly HashSet<PlayerController> onBelt = new();
         readonly Dictionary<ulong, int> fastPolls = new(); // vehicle -> consecutive polls over the limit
         AircraftController aircraft;
 
@@ -137,11 +136,11 @@ namespace Turnaround.Events
                 }
             }
 
+            // By position, not by collider: remote players' host-side bodies are proxies, not their own capsules.
             foreach (var belt in FindObjectsByType<BeltLoader>(FindObjectsSortMode.None))
-            {
-                Core.BoxScan.Collect(belt.carryZone, onBelt);
-                foreach (var p in onBelt) ServerReport(ViolationKind.StandingOnBelt, p.OwnerClientId);
-            }
+                foreach (var p in PlayerController.All)
+                    if (p.Vehicle == null && Core.BoxScan.Contains(belt.carryZone, p.transform.position + Vector3.up * 0.1f))
+                        ServerReport(ViolationKind.StandingOnBelt, p.OwnerClientId);
 
             if (ac == null || !ac.IsStationary) return;
             foreach (var v in FindObjectsByType<VehicleController>(FindObjectsSortMode.None))

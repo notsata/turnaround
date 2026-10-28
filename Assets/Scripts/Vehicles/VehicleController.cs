@@ -1,3 +1,4 @@
+using System.Linq;
 using Turnaround.Interaction;
 using Turnaround.Player;
 using Unity.Netcode;
@@ -9,7 +10,7 @@ namespace Turnaround.Vehicles
     // the driver only sends throttle/steer/brake when keys change.
     // shortcut: clients feel one round-trip of input lag; fine on LAN, revisit with prediction if online play matters.
     [RequireComponent(typeof(Rigidbody))]
-    public class VehicleController : NetworkBehaviour, IInteractable
+    public class VehicleController : NetworkBehaviour, IInteractable, IPushable, IShovable
     {
         public const ulong NoDriver = ulong.MaxValue;
 
@@ -26,6 +27,11 @@ namespace Turnaround.Vehicles
         public float grip = 12f; // how fast sideways slide is killed; lower = more drift
         [Range(0f, 1f)] public float reliability = 1f; // below 1: hard starting and the odd stall
         public float steerResponse = 6f; // how fast the wheel follows the input; low = sluggish old tug
+        public float parkedDecel = 0.6f; // unattended: brakes "on", but a few hard shoves still nudge it along
+        public float pushImpulse = 450f; // N*s from a walking player; mass decides how much that actually does
+        public float maxRiseSpeed = 2f; // nothing on the ramp should go up faster than this
+
+        public static readonly System.Collections.Generic.List<VehicleController> All = new();
 
         static AudioClip engineClip;
 
@@ -35,6 +41,7 @@ namespace Turnaround.Vehicles
         float steerApplied;
 
         Rigidbody rb;
+        readonly Core.PhysicsSanity sanity = new();
         AudioSource engine;
         PlayerController driver;
         float throttle, steer;
@@ -71,6 +78,7 @@ namespace Turnaround.Vehicles
 
         public override void OnNetworkSpawn()
         {
+            All.Add(this);
             rb.isKinematic = !IsServer;
             driverId.OnValueChanged += OnDriverChanged;
             ApplyDriver();
@@ -80,6 +88,7 @@ namespace Turnaround.Vehicles
 
         public override void OnNetworkDespawn()
         {
+            All.Remove(this);
             driverId.OnValueChanged -= OnDriverChanged;
             if (driver != null && driver.Vehicle == this) driver.Vehicle = null;
         }
@@ -126,8 +135,12 @@ namespace Turnaround.Vehicles
         void FixedUpdate()
         {
             if (!IsServer || !IsSpawned) return;
+            if (sanity.Check(rb)) // rescued after a glitch: let go of anything we were towing
+                foreach (var cart in Baggage.BaggageCart.All.ToArray())
+                    if (cart.HitchedToId == NetworkObjectId) cart.ServerUnhitch();
             float dt = Time.fixedDeltaTime;
             Vector3 v = rb.linearVelocity;
+            if (v.y > maxRiseSpeed) v.y = maxRiseSpeed; // last line of defence against any overlap launching us
             Vector3 forward = transform.forward;
             float along = Vector3.Dot(v, forward);
             Vector3 lateral = v - forward * along;
@@ -137,7 +150,7 @@ namespace Turnaround.Vehicles
             bool raining = Events.RandomEventManager.Raining;
             bool parked = !HasDriver || InputLocked || Stalled || Events.RandomEventManager.RampClosed;
             float target = parked || brake ? 0f : throttle * (throttle > 0f ? maxSpeed : maxReverse);
-            float rate = parked || brake ? brakeDecel * (raining ? 0.5f : 1f) : throttle != 0f ? acceleration : coastDecel;
+            float rate = !HasDriver ? parkedDecel : parked || brake ? brakeDecel * (raining ? 0.5f : 1f) : throttle != 0f ? acceleration : coastDecel;
             along = Mathf.MoveTowards(along, target, rate * dt);
             lateral = Vector3.MoveTowards(lateral, Vector3.zero, grip * (raining ? 0.3f : 1f) * dt);
             rb.linearVelocity = forward * along + lateral + Vector3.up * v.y;
@@ -145,6 +158,30 @@ namespace Turnaround.Vehicles
             steerApplied = Mathf.MoveTowards(steerApplied, parked ? 0f : steer, steerResponse * dt);
             float yawRate = steerApplied * turnRate * Mathf.Clamp(along / 2.5f, -1f, 1f);
             rb.angularVelocity = new Vector3(0f, yawRate * Mathf.Deg2Rad, 0f);
+        }
+
+        // A walking player bumping an unattended vehicle. Mass-scaled, so it takes a lot of bumping.
+        public void Push(Vector3 velocity) => PushRpc(velocity);
+
+        [Rpc(SendTo.Server)]
+        void PushRpc(Vector3 velocity)
+        {
+            if (HasDriver) return;
+            velocity.y = 0f;
+            ServerShove(velocity.normalized * pushImpulse * Mathf.Clamp01(velocity.magnitude / 4f));
+        }
+
+        public void ServerShove(Vector3 impulse)
+        {
+            if (!IsServer || HasDriver) return;
+            impulse.y = 0f;
+            rb.AddForce(impulse, ForceMode.Impulse);
+        }
+
+        // Bankruptcy/run reset: kick the driver out.
+        public void ServerEjectDriver()
+        {
+            if (IsServer && HasDriver) ClearDriver();
         }
 
         void OnCollisionEnter(Collision collision)

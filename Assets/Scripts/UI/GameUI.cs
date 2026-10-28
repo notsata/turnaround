@@ -37,6 +37,8 @@ namespace Turnaround.UI
         void Awake()
         {
             MenuOpen = false;
+            Cursor.lockState = CursorLockMode.None; // fresh menu (also after a disconnect reload): mouse is free
+            Cursor.visible = true;
             status = ConnectionManager.LastDisconnectReason;
             ConnectionManager.LastDisconnectReason = null;
         }

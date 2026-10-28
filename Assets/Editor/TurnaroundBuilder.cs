@@ -285,7 +285,7 @@ public static class TurnaroundBuilder
         var muff = Flat("EarMuff", new Color(0.85f, 0.12f, 0.1f));
         var black = Flat("Black", new Color(0.05f, 0.05f, 0.05f));
 
-        var root = new GameObject("Player");
+        var root = new GameObject("Player") { layer = Layers.Player };
         var cc = root.AddComponent<CharacterController>();
         cc.height = 1.8f;
         cc.radius = 0.35f;
@@ -413,6 +413,20 @@ public static class TurnaroundBuilder
             Prim(PrimitiveType.Cube, "Rope", t, new Vector3(0.3f, 0.02f, 0), new Vector3(0.12f, 0.03f, 0.03f), Flat("Rope", new Color(0.1f, 0.3f, 0.9f)));
         }, Kind(CarryKind.Chock));
 
+        var steel = Mat("ToolSteel", new Color(0.55f, 0.57f, 0.6f), 0.12f, 0.08f);
+        var wood = Mat("ToolHandle", new Color(0.55f, 0.38f, 0.2f), 0.15f, 0.05f);
+        props["Shovel"] = Prop("Shovel", "Shovel", CarryWeight.Light, 3f, t =>
+        {
+            Prim(PrimitiveType.Cylinder, "Handle", t, new Vector3(0, 0.1f, 0), new Vector3(0.05f, 0.5f, 0.05f), wood);
+            Prim(PrimitiveType.Cube, "Grip", t, new Vector3(0, 0.62f, 0), new Vector3(0.16f, 0.04f, 0.04f), wood);
+            Prim(PrimitiveType.Cube, "Blade", t, new Vector3(0, -0.52f, 0.02f), new Vector3(0.26f, 0.3f, 0.03f), steel, false, new Vector3(12, 0, 0));
+        }, go => Melee(go, swing: 0.35f, cooldown: 0.6f, range: 2.3f, arc: 55f, knock: 9f, up: 4f, down: 2.2f));
+        props["Hammer"] = Prop("Hammer", "Sledgehammer", CarryWeight.Medium, 6f, t =>
+        {
+            Prim(PrimitiveType.Cylinder, "Handle", t, new Vector3(0, 0f, 0), new Vector3(0.05f, 0.42f, 0.05f), wood);
+            Prim(PrimitiveType.Cube, "Head", t, new Vector3(0, 0.45f, 0), new Vector3(0.3f, 0.13f, 0.13f), Mat("ToolIron", new Color(0.25f, 0.25f, 0.27f), 0.1f, 0.1f));
+        }, go => Melee(go, swing: 0.6f, cooldown: 1.1f, range: 2.0f, arc: 35f, knock: 14f, up: 6f, down: 3f));
+
         return props;
     }
 
@@ -423,6 +437,16 @@ public static class TurnaroundBuilder
     }
 
     static Action<GameObject> Kind(CarryKind kind) => go => go.GetComponent<CarryableObject>().kind = kind;
+
+    static void Melee(GameObject go, float swing, float cooldown, float range, float arc, float knock, float up, float down)
+    {
+        var carry = go.GetComponent<CarryableObject>();
+        carry.kind = CarryKind.Tool;
+        carry.heldInHand = true;
+        carry.heldEuler = new Vector3(55f, 0f, 0f); // head up and forward, ready to swing
+        var m = go.AddComponent<MeleeWeapon>();
+        (m.swingDuration, m.swingCooldown, m.range, m.arcDegrees, m.knockback, m.upwardForce, m.ragdollDuration) = (swing, cooldown, range, arc, knock, up, down);
+    }
 
     static GameObject Prop(string id, string displayName, CarryWeight weight, float mass, Action<Transform> buildVisual, Action<GameObject> configure = null)
     {
@@ -471,6 +495,12 @@ public static class TurnaroundBuilder
         for (int i = 0; i < 6; i++) Place("Cone", new Vector3(-46f + i * 0.9f, 0.4f, 26f), rng.Next(0, 360));
         for (int i = 0; i < 4; i++) Place("Chock", new Vector3(-40f + i * 0.8f, 0.3f, 23f), 90f);
         Place("Cone", new Vector3(14f, 0.4f, 30f), 0f);
+
+        // Tools lying around for "maintenance purposes".
+        Place("Shovel", new Vector3(-50.5f, 0.5f, 37f), 30f);
+        Place("Shovel", new Vector3(-36f, 0.5f, 25.5f), 80f);
+        Place("Hammer", new Vector3(-14.5f, 1.0f, -2.5f), 10f);
+        Place("Hammer", new Vector3(-56.1f, 1.1f, 40f), 0f); // on the shed workbench
     }
 
     // ---------- environment ----------
@@ -778,7 +808,7 @@ public static class TurnaroundBuilder
     // Ground power unit: a towable/pushable cart (same physics as a baggage cart) with a power switch and a cable reel.
     static GameObject BuildGpu()
     {
-        var (root, _) = PhysicsRoot("GPU", 500f);
+        var (root, _) = PhysicsRoot("GPU", 900f);
         var t = root.transform;
         var green = Mat("GpuGreen", new Color(0.35f, 0.45f, 0.3f), 0.2f, 0.12f);
         SlideBody("Chassis", t, new Vector3(0, 0.25f, 0), new Vector3(1.1f, 0.44f, 1.5f), Mat("RustyMetal", Color.gray));
@@ -820,7 +850,7 @@ public static class TurnaroundBuilder
     // Low and long so it fits under the nose; the tow point sticks out the front, the open cab is at the back.
     static GameObject BuildTug()
     {
-        var (root, _) = PhysicsRoot("PushbackTug", 6000f);
+        var (root, _) = PhysicsRoot("PushbackTug", 9000f);
         var t = root.transform;
         var paint = Mat("TugBlue", new Color(0.2f, 0.28f, 0.45f), 0.2f, 0.12f);
         var stripe = Flat("TugStripe", new Color(0.95f, 0.8f, 0.15f));
@@ -845,6 +875,7 @@ public static class TurnaroundBuilder
         vc.grip = 16f;
         vc.reliability = 0.85f;
         vc.steerResponse = 0.9f; // old tug: the wheel is more of a suggestion
+        vc.parkedDecel = 0.15f; // nine tonnes: walking into it barely registers, a hammer nudges it
         vc.kind = EquipmentKind.Tug;
         root.AddComponent<PushbackTug>().towPoint = Group("TowPoint", t, new Vector3(0, 0.3f, 2.5f));
         return SavePrefab(root, "Assets/Prefabs/Equipment/PushbackTug.prefab");
@@ -886,6 +917,8 @@ public static class TurnaroundBuilder
         rb.interpolation = RigidbodyInterpolation.Interpolate;
         rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ; // no rollovers (yet)
         rb.maxDepenetrationVelocity = 2f; // overlaps (spawns, teleports, a capsule inside it) nudge it out instead of launching it
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative; // no tunnelling into the aircraft at speed
+        rb.linearDamping = 0.05f;
         root.AddComponent<NetworkObject>();
         var nt = root.AddComponent<NetworkTransform>();
         nt.SyncRotAngleX = nt.SyncRotAngleZ = false;
@@ -922,7 +955,7 @@ public static class TurnaroundBuilder
     // Tractor #7: faded orange box with a lawnmower soul. Seat anchor = player feet so hips land on the cushion.
     static GameObject BuildTractor()
     {
-        var (root, _) = PhysicsRoot("BaggageTractor", 1200f);
+        var (root, _) = PhysicsRoot("BaggageTractor", 2500f);
         var t = root.transform;
         var paint = Mat("TractorPaint", new Color(0.85f, 0.52f, 0.12f), 0.2f, 0.12f);
         var dark = Mat("SeatVinyl", new Color(0.15f, 0.15f, 0.15f), 0.15f, 0.1f);
@@ -945,7 +978,7 @@ public static class TurnaroundBuilder
     // Belt runs from low at the back to 1.5 m at the front (local +Z), overhanging so it reaches into the hold door.
     static GameObject BuildBeltLoader()
     {
-        var (root, _) = PhysicsRoot("BeltLoader", 1500f);
+        var (root, _) = PhysicsRoot("BeltLoader", 3000f);
         var t = root.transform;
         var paint = Mat("LoaderPaint", new Color(0.85f, 0.75f, 0.22f), 0.2f, 0.12f);
         var rubber = Mat("BeltRubber", new Color(0.16f, 0.16f, 0.17f), 0.5f, 0.25f);
@@ -988,7 +1021,7 @@ public static class TurnaroundBuilder
 
     static GameObject BuildCart()
     {
-        var (root, _) = PhysicsRoot("BaggageCart", 250f);
+        var (root, _) = PhysicsRoot("BaggageCart", 600f);
         var t = root.transform;
         var grey = Mat("CartGrey", new Color(0.48f, 0.5f, 0.48f), 0.2f, 0.15f);
         SlideBody("Chassis", t, new Vector3(0, 0.26f, 0), new Vector3(1.3f, 0.48f, 2.2f), Mat("RustyMetal", Color.gray));
@@ -1182,6 +1215,16 @@ public static class TurnaroundBuilder
         ColliderBox("Col_BellyAft", t, new Vector3(0, 1.6f, -13.25f), new Vector3(2.8f, 1.4f, 13.5f));
         ColliderBox("Col_HoldBelly", t, new Vector3(0, 1.0f, -4.75f), new Vector3(2.0f, 0.2f, 3.5f));
         ColliderBox("Col_HoldLeft", t, new Vector3(-1.2f, 1.6f, -4.75f), new Vector3(0.4f, 1.4f, 3.5f));
+        // Keep equipment from driving under the belly (behind the nose gear, so the tug still fits under the nose),
+        // plus the nose, tail cone and gear legs, which used to be visual only.
+        ColliderBox("Col_UnderBelly", t, new Vector3(0, 0.425f, -11.5f), new Vector3(2.2f, 0.85f, 21f)); // below the service panels
+        var nose = new GameObject("Col_Nose");
+        nose.transform.SetParent(t, false);
+        var noseCap = nose.AddComponent<CapsuleCollider>();
+        (noseCap.center, noseCap.radius, noseCap.height, noseCap.direction) = (new Vector3(0, 2.3f, 1.9f), 1.25f, 4.4f, 2);
+        ColliderBox("Col_TailCone", t, new Vector3(0, 2.6f, -21.5f), new Vector3(2.0f, 2.0f, 3.5f));
+        foreach (var side in new[] { -1f, 1f }) ColliderBox("Col_MainGear", t, new Vector3(2.2f * side, 0.7f, -10.5f), new Vector3(0.7f, 1.4f, 0.9f));
+        ColliderBox("Col_NoseGear", t, new Vector3(0, 0.75f, 0), new Vector3(0.35f, 0.8f, 0.35f));
 
         // Forward hold: lined box inside the gap, floor at y 1.3 (chest height, good for throwing).
         Prim(PrimitiveType.Cube, "HoldFloor", t, new Vector3(0, 1.2f, -4.75f), new Vector3(1.96f, 0.2f, 3.5f), lining, true);

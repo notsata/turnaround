@@ -265,6 +265,8 @@ MonoBehaviour:
   displayName: Wheel Chock
   weight: 1
   kind: 3
+  heldInHand: 0
+  heldEuler: {x: 0, y: 0, z: 0}
 --- !u!1 &6451435885444458996
 GameObject:
   m_ObjectHideFlags: 0
