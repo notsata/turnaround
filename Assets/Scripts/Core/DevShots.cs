@@ -32,21 +32,28 @@ namespace Turnaround.Core
             var main = Object.FindFirstObjectByType<LowResRenderer>()?.GetComponent<Camera>();
             if (main != null) cam.CopyFrom(main);
             cam.targetTexture = null;
-            var rt = new RenderTexture(1280, 720, 24);
-            var tex = new Texture2D(1280, 720, TextureFormat.RGB24, false);
+            const int width = 426, height = 240;
+            var rt = new RenderTexture(width, height, 24) { filterMode = FilterMode.Point, antiAliasing = 1 };
+            var tex = new Texture2D(width, height, TextureFormat.RGB24, false) { filterMode = FilterMode.Point };
             foreach (var (name, pos, lookAt) in Views)
             {
                 go.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(lookAt - pos));
                 cam.targetTexture = rt;
                 cam.Render();
                 RenderTexture.active = rt;
-                tex.ReadPixels(new Rect(0, 0, 1280, 720), 0, 0);
+                tex.ReadPixels(new Rect(0, 0, width, height), 0, 0);
                 tex.Apply();
                 RenderTexture.active = null;
                 File.WriteAllBytes(Path.Combine(folder, name + ".png"), tex.EncodeToPNG());
                 Debug.Log("[SHOTS] " + name);
                 yield return null;
             }
+            cam.targetTexture = null;
+            RenderTexture.active = null;
+            rt.Release();
+            Destroy(rt);
+            Destroy(tex);
+            Destroy(go);
             Application.Quit();
         }
     }

@@ -39,22 +39,43 @@ namespace Turnaround.Baggage
 
         public void ServerSetTag(int id, int flightNumber, string dest, bool isInbound, bool isFragile)
         {
+            if (!IsServer || !IsSpawned)
+            {
+                Debug.LogError($"[TURNAROUND] Cannot tag {name} before its NetworkObject is spawned");
+                return;
+            }
             bagId.Value = id;
             flight.Value = flightNumber;
             destination.Value = new FixedString32Bytes(dest);
             inbound.Value = isInbound;
             fragile.Value = isFragile;
+            RefreshTagColor();
         }
 
         public override void OnNetworkSpawn()
         {
             All.Add(this);
+            flight.OnValueChanged += OnTagChanged;
+            inbound.OnValueChanged += OnTagChanged;
+            RefreshTagColor();
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            flight.OnValueChanged -= OnTagChanged;
+            inbound.OnValueChanged -= OnTagChanged;
+            All.Remove(this);
+        }
+
+        void OnTagChanged<T>(T previous, T current) => RefreshTagColor();
+
+        void RefreshTagColor()
+        {
+            if (tagRenderer == null) return;
             tagRenderer.material.color = Flight == 0 ? Color.gray
                 : Inbound ? new Color(0.4f, 0.9f, 0.4f)
                 : TagPalette[Flight % TagPalette.Length];
         }
-
-        public override void OnNetworkDespawn() => All.Remove(this);
 
         // Only the host simulates bag physics, so only it sees collisions.
         void OnCollisionEnter(Collision collision)

@@ -26,7 +26,7 @@ using Random = System.Random;
 public static class TurnaroundBuilder
 {
     const string ScenePath = "Assets/Scenes/Ramp.unity";
-    static readonly Color FogColor = new(0.74f, 0.8f, 0.86f);
+    static readonly Color FogColor = new(0.42f, 0.49f, 0.58f);
 
     static readonly Dictionary<string, Material> Mats = new();
     static Font font;
@@ -160,27 +160,40 @@ public static class TurnaroundBuilder
 
     // ---------- materials ----------
 
-    // Crude 64x64 texture: base color with blotchy variation and dark speckles. Point filtered on purpose.
+    // Restrained 32x32 low-bit texture. Large coherent patches survive the low-resolution
+    // presentation; sparse single-pixel noise did not, and made every surface look dirty.
     static Material Mat(string name, Color color, float variation = 0.08f, float speckle = 0.04f, float tiling = 1f)
     {
         if (Mats.TryGetValue(name, out var existing)) return existing;
         var rng = new Random(name.GetHashCode());
-        var tex = new Texture2D(64, 64, TextureFormat.RGBA32, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat, name = name };
-        var px = new Color[64 * 64];
-        for (int y = 0; y < 64; y++)
-        for (int x = 0; x < 64; x++)
+        const int textureSize = 32;
+        // Mipmaps are essential on the huge tiled runway/grass surfaces. Without them,
+        // sub-pixel texels alias into a different pattern every frame while moving.
+        var tex = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, true)
+            { filterMode = FilterMode.Trilinear, anisoLevel = 0, wrapMode = TextureWrapMode.Repeat, name = name };
+        var px = new Color[textureSize * textureSize];
+        float seed = Mathf.Abs(name.GetHashCode() % 997) * 0.013f;
+        for (int y = 0; y < textureSize; y++)
+        for (int x = 0; x < textureSize; x++)
         {
-            float blotch = Mathf.PerlinNoise(x * 0.09f + name.Length, y * 0.09f) - 0.5f;
-            float v = 1f + blotch * variation * 2f + ((float)rng.NextDouble() - 0.5f) * variation;
-            if (rng.NextDouble() < speckle) v *= 0.6f;
-            px[y * 64 + x] = new Color(color.r * v, color.g * v, color.b * v, 1f);
+            float broad = Mathf.PerlinNoise(x * 0.075f + seed, y * 0.075f + seed) - 0.5f;
+            float fine = Mathf.PerlinNoise(x * 0.28f + seed, y * 0.28f) - 0.5f;
+            float v = 1f + broad * variation * 1.35f + fine * variation * 0.25f;
+            if (speckle > 0f && rng.NextDouble() < speckle * 0.12f) v -= variation * 0.7f;
+            Color c = new(color.r * v, color.g * v, color.b * v, 1f);
+            c.r = Mathf.Round(c.r * 31f) / 31f;
+            c.g = Mathf.Round(c.g * 31f) / 31f;
+            c.b = Mathf.Round(c.b * 31f) / 31f;
+            px[y * textureSize + x] = c;
         }
         tex.SetPixels(px);
         tex.Apply();
         AssetDatabase.CreateAsset(tex, $"Assets/Textures/{name}.asset");
 
-        var mat = new Material(Shader.Find("Standard")) { mainTexture = tex, color = Color.white, mainTextureScale = Vector2.one * tiling };
-        mat.SetFloat("_Glossiness", 0.05f);
+        var shader = Shader.Find("Turnaround/PS1Surface");
+        if (shader == null) throw new InvalidOperationException("Turnaround/PS1Surface shader is missing");
+        var mat = new Material(shader) { mainTexture = tex, color = Color.white, mainTextureScale = Vector2.one * tiling };
+        mat.SetFloat("_Snap", 0.35f);
         AssetDatabase.CreateAsset(mat, $"Assets/Materials/{name}.mat");
         return Mats[name] = mat;
     }
@@ -206,8 +219,12 @@ public static class TurnaroundBuilder
         Prim(PrimitiveType.Cube, name, parent, pos, size, mat, true, euler);
 
     // Flat paint/marking on the ground, no collider so nobody trips on a stripe.
-    static void Paint(string name, Transform parent, Vector3 center, Vector2 size, Material mat, float y = 0.011f) =>
-        Prim(PrimitiveType.Cube, name, parent, new Vector3(center.x, y, center.z), new Vector3(size.x, 0.02f, size.y), mat);
+    // Quantized height layers prevent coplanar surfaces from fighting at the long airfield draw distance.
+    static void Paint(string name, Transform parent, Vector3 center, Vector2 size, Material mat, float y = 0.011f)
+    {
+        float layer = y <= 0.002f ? 0.008f : y <= 0.012f ? 0.026f : 0.044f;
+        Prim(PrimitiveType.Cube, name, parent, new Vector3(center.x, layer, center.z), new Vector3(size.x, 0.008f, size.y), mat);
+    }
 
     static Transform Group(string name, Transform parent, Vector3 pos = default, float yaw = 0f)
     {
@@ -618,37 +635,37 @@ public static class TurnaroundBuilder
 
     // ---------- environment ----------
 
-    // Bright daytime: procedural sky, trilight ambient, warm sun with soft shadows, long thin haze.
+    // Muted late-1990s daylight: hard shadows, compressed range and a visible distance haze.
     static void BuildLighting()
     {
         var sky = new Material(Shader.Find("Skybox/Procedural")) { name = "DaySky" };
         sky.SetFloat("_SunDisk", 2f);
         sky.SetFloat("_SunSize", 0.035f);
         sky.SetFloat("_SunSizeConvergence", 5f);
-        sky.SetFloat("_AtmosphereThickness", 0.85f);
-        sky.SetColor("_SkyTint", new Color(0.5f, 0.5f, 0.5f)); // neutral: tinting it blue turned the horizon green
-        sky.SetColor("_GroundColor", new Color(0.37f, 0.35f, 0.34f));
-        sky.SetFloat("_Exposure", 1.25f);
+        sky.SetFloat("_AtmosphereThickness", 0.62f);
+        sky.SetColor("_SkyTint", new Color(0.35f, 0.43f, 0.56f));
+        sky.SetColor("_GroundColor", new Color(0.21f, 0.23f, 0.25f));
+        sky.SetFloat("_Exposure", 0.72f);
         AssetDatabase.CreateAsset(sky, "Assets/Materials/DaySky.mat");
         RenderSettings.skybox = sky;
 
         RenderSettings.ambientMode = AmbientMode.Trilight;
-        RenderSettings.ambientSkyColor = new Color(0.62f, 0.7f, 0.82f);
-        RenderSettings.ambientEquatorColor = new Color(0.55f, 0.57f, 0.58f);
-        RenderSettings.ambientGroundColor = new Color(0.3f, 0.29f, 0.26f);
+        RenderSettings.ambientSkyColor = new Color(0.38f, 0.45f, 0.56f);
+        RenderSettings.ambientEquatorColor = new Color(0.32f, 0.34f, 0.37f);
+        RenderSettings.ambientGroundColor = new Color(0.17f, 0.16f, 0.15f);
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Linear;
         RenderSettings.fogColor = FogColor;
-        RenderSettings.fogStartDistance = 180f;
-        RenderSettings.fogEndDistance = 1400f;
+        RenderSettings.fogStartDistance = 130f;
+        RenderSettings.fogEndDistance = 760f;
 
         var sun = new GameObject("Sun").AddComponent<Light>();
         sun.type = LightType.Directional;
         sun.transform.rotation = Quaternion.Euler(48f, -35f, 0f);
         sun.color = new Color(1f, 0.96f, 0.88f);
-        sun.intensity = 1.1f;
-        sun.shadows = LightShadows.Soft;
-        sun.shadowStrength = 0.75f;
+        sun.intensity = 0.92f;
+        sun.shadows = LightShadows.Hard;
+        sun.shadowStrength = 0.82f;
         RenderSettings.sun = sun;
         QualitySettings.shadowDistance = 160f; // shadows near you, not across the whole airfield
     }
@@ -669,8 +686,9 @@ public static class TurnaroundBuilder
         var plastic = Mat("OfficePlastic", new Color(0.3f, 0.33f, 0.4f), 0.06f, 0.02f);
         var ink = new Color(0.1f, 0.1f, 0.12f);
 
-        // Thick so nothing shoved by an overlap (players, spawns) can be pushed through it.
-        Box("Ground", world, new Vector3(20f, -1f, 35f), new Vector3(220f, 2f, 130f), concrete); // the apron; grass beyond
+        // The apron's looks only. What you stand and drive on is the airfield's single FieldGround collider (2 m thick, so
+        // nothing shoved by an overlap can be pushed through it); a second collider here leaves a seam vehicles snag on.
+        Prim(PrimitiveType.Cube, "Ground", world, new Vector3(20f, -1f, 35f), new Vector3(220f, 2f, 130f), concrete); // grass beyond
 
         // Terminal building with gates.
         var term = Group("Terminal", world);
@@ -1576,8 +1594,36 @@ public static class TurnaroundBuilder
             Text("09-27", twy, new Vector3(x - 17.2f, 0.7f, hz - 0.14f), Vector3.zero, 0.42f, Color.white);
         }
 
-        // Grass everywhere the apron isn't, a perimeter road and a fence.
-        Box("Grass", field, new Vector3(0, -1.01f, 150f), new Vector3(1300f, 2f, 520f), Mat("SadGrass", Color.green));
+        // Grass everywhere the paved surfaces aren't, flush with them (top at y 0). Grass must never lie under a paved
+        // surface: a one-centimetre gap z-fights at the long camera far plane and turns whole chunks of concrete green.
+        // One flat invisible collider under the whole field, so the apron edge and the grass/taxiway edges aren't steps.
+        ColliderBox("FieldGround", field, new Vector3(0, -1f, 150f), new Vector3(1300f, 2f, 520f));
+        var grass = Mat("SadGrass", Color.green);
+        var holes = new List<Rect>
+        {
+            Rect.MinMaxRect(-90f, -30f, 130f, 100f), // apron
+            Rect.MinMaxRect(-500f, RunwayZ - 22.5f, 500f, RunwayZ + 22.5f),
+            Rect.MinMaxRect(-480f, TaxiwayZ - 11f, 480f, TaxiwayZ + 11f),
+            // perimeter roads (fence at x ±620, z -100..400) and the access road, as painted below
+            Rect.MinMaxRect(-600f, -93f, 600f, -87f), Rect.MinMaxRect(-600f, 387f, 600f, 393f),
+            Rect.MinMaxRect(-613f, -90f, -607f, 390f), Rect.MinMaxRect(607f, -90f, 613f, 390f),
+            Rect.MinMaxRect(-78f, -100f, -72f, -20f),
+        };
+        foreach (var x in new[] { A1X, A5X })
+        {
+            holes.Add(Rect.MinMaxRect(x - 11f, TaxiwayZ, x + 11f, RunwayZ - 22f)); // connector
+            holes.Add(Rect.MinMaxRect(x - 17f, TaxiwayZ - 11f, x + 17f, TaxiwayZ + 11f)); // fillet
+        }
+        var patches = new List<Rect> { Rect.MinMaxRect(-650f, -110f, 650f, 410f) };
+        foreach (var hole in holes) patches = Subtract(patches, hole);
+        for (int i = 0; i < patches.Count; i++)
+        {
+            var r = patches[i];
+            var patchMat = new Material(grass) { name = "Grass" + i, mainTextureScale = r.size / 8.7f }; // same texel size on every patch
+            AssetDatabase.DeleteAsset($"Assets/Materials/Grass{i}.mat");
+            AssetDatabase.CreateAsset(patchMat, $"Assets/Materials/Grass{i}.mat");
+            Prim(PrimitiveType.Cube, "Grass", field, new Vector3(r.center.x, -1f, r.center.y), new Vector3(r.width, 2f, r.height), patchMat);
+        }
         const float fx = 620f, fzMin = -100f, fzMax = 400f;
         var fence = Mat("ChainLink", new Color(0.62f, 0.64f, 0.62f), 0.3f, 0.25f, 40f);
         var post = Flat("FencePost", new Color(0.4f, 0.41f, 0.4f));
@@ -1618,6 +1664,22 @@ public static class TurnaroundBuilder
         BuildTower(field, new Vector3(-108f, 0, -14f));
         BuildDistantTown(world);
         BuildHills(world, fx, fzMin, fzMax);
+    }
+
+    // Rectangles (x, z) minus a hole: each one the hole overlaps is split into up to four that don't.
+    static List<Rect> Subtract(List<Rect> rects, Rect hole)
+    {
+        var result = new List<Rect>();
+        foreach (var r in rects)
+        {
+            if (!r.Overlaps(hole)) { result.Add(r); continue; }
+            float yMin = Mathf.Max(r.yMin, hole.yMin), yMax = Mathf.Min(r.yMax, hole.yMax);
+            if (hole.yMin > r.yMin) result.Add(Rect.MinMaxRect(r.xMin, r.yMin, r.xMax, hole.yMin));
+            if (hole.yMax < r.yMax) result.Add(Rect.MinMaxRect(r.xMin, hole.yMax, r.xMax, r.yMax));
+            if (hole.xMin > r.xMin) result.Add(Rect.MinMaxRect(r.xMin, yMin, hole.xMin, yMax));
+            if (hole.xMax < r.xMax) result.Add(Rect.MinMaxRect(hole.xMax, yMin, r.xMax, yMax));
+        }
+        return result;
     }
 
     static Mesh PrimMesh(PrimitiveType type)

@@ -65,6 +65,12 @@ namespace Turnaround.Vehicles
         void Awake()
         {
             rb = GetComponent<Rigidbody>();
+            // Off-centre or tilted colliders (the belt loader's belt) tilt the inertia frame; with pitch/roll frozen and the
+            // yaw rate forced, a tilted frame turns steering into lift. Keep the principal axes upright. Setting the rotation
+            // switches off automatic inertia and resets the tensor to 1, so put the computed one back.
+            var inertia = rb.inertiaTensor;
+            rb.inertiaTensorRotation = Quaternion.identity;
+            rb.inertiaTensor = inertia;
             Action = GetComponent<IVehicleAction>();
             engine = gameObject.AddComponent<AudioSource>();
             engine.clip = EngineClip();

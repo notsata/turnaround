@@ -140,8 +140,8 @@ namespace Turnaround.Baggage
         void Spawn(System.Random rng, Vector3 position, Quaternion rotation, int flight, string destination, bool inbound, GameObject prefab = null)
         {
             var go = Instantiate(prefab != null ? prefab : bagPrefabs[rng.Next(bagPrefabs.Length)], position, rotation);
-            go.GetComponent<BaggageItem>().ServerSetTag(nextBagId++, flight, destination, inbound, rng.NextDouble() < fragileChance);
             go.GetComponent<NetworkObject>().Spawn(true);
+            go.GetComponent<BaggageItem>().ServerSetTag(nextBagId++, flight, destination, inbound, rng.NextDouble() < fragileChance);
         }
 
         void LogSettled() => Debug.Log($"[TURNAROUND] After settling{(IsServer ? "" : " (client)")}: {InboundInHold}/{InboundTotal} inbound still in hold, {WrongLoaded} other items in hold");

@@ -34,6 +34,11 @@ namespace Turnaround.Core
                 yield return StressTest();
                 yield break;
             }
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-testdrive") >= 0)
+            {
+                yield return DriveTest();
+                yield break;
+            }
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-testbelt") >= 0)
             {
                 yield return BeltLoaderTest();
@@ -218,6 +223,44 @@ namespace Turnaround.Core
             ShiftManager.Instance.ServerStartShift();
             yield return new WaitForSeconds(2f);
             Log($"after restart: inLobby={ShiftManager.InLobby} me at {me.transform.position}");
+        }
+
+        // Repro for "vehicles fly away when moving forward and turning" and "can't drive back from the runway":
+        // every vehicle does full-lock circles on the apron and on the airfield, then drives from the runway to the ramp.
+        IEnumerator DriveTest()
+        {
+            yield return new WaitForSeconds(2f);
+            foreach (var v in VehicleController.All.ToArray())
+            {
+                var rb = v.GetComponent<Rigidbody>();
+                foreach (var (label, start, yaw, steer, seconds) in new[]
+                {
+                    ("apron circles", new Vector3(20f, 0f, 45f), 0f, 1f, 8f),
+                    ("airfield circles", new Vector3(0f, 0f, 160f), 90f, -1f, 8f),
+                    ("runway to ramp", new Vector3(0f, 0f, 150f), 180f, 0f, 25f),
+                })
+                {
+                    v.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+                    Place(v.transform, start, 0.05f);
+                    yield return new WaitForSeconds(0.5f);
+                    yield return Use(v.seatAnchor.position, v, v.exitPoint.position);
+                    float maxY = -9f, minY = 9f, maxVy = 0f;
+                    for (float t = 0; t < seconds; t += Time.deltaTime)
+                    {
+                        v.SendInput(1f, steer, false);
+                        maxY = Mathf.Max(maxY, rb.position.y);
+                        minY = Mathf.Min(minY, rb.position.y);
+                        maxVy = Mathf.Max(maxVy, rb.linearVelocity.y);
+                        yield return null;
+                    }
+                    v.SendInput(0f, 0f, true);
+                    yield return new WaitForSeconds(1f);
+                    v.RequestExit();
+                    yield return new WaitForSeconds(0.6f);
+                    Log($"{v.displayName}, {label}: y {minY:F2}..{maxY:F2}, max rise {maxVy:F2} m/s, ended at {rb.position}");
+                }
+            }
+            Log("drive test done");
         }
 
         // Repro for "the belt loader flies away when you get in": board it and watch it for a few seconds.

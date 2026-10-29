@@ -25,7 +25,8 @@ namespace Turnaround.UI
         bool reportShown;
         bool joinScreen;
         AircraftController aircraft;
-        GUIStyle title, label, big, button, field, center, mono, radioStyle, alert, smallButton;
+        GUIStyle title, label, big, button, field, center, mono, radioStyle, alert, smallButton, panelStyle;
+        Texture2D buttonTex, buttonHoverTex, buttonActiveTex, fieldTex, panelTex, shadeTex;
         static bool companyOpen;
         int companyTab;
         Vector2 companyScroll;
@@ -61,6 +62,8 @@ namespace Turnaround.UI
         void OnDestroy()
         {
             if (Net != null) Net.OnClientDisconnectCallback -= OnClientDisconnect;
+            foreach (var tex in new[] { buttonTex, buttonHoverTex, buttonActiveTex, fieldTex, panelTex, shadeTex })
+                if (tex != null) Destroy(tex);
         }
 
         void OnClientDisconnect(ulong clientId)
@@ -101,20 +104,55 @@ namespace Turnaround.UI
             if (title != null && Mathf.Approximately(scale, styleScale)) return;
             styleScale = scale;
             int Size(float px) => Mathf.RoundToInt(px * scale);
-            title = new GUIStyle(GUI.skin.label) { fontSize = Size(96), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            title.normal.textColor = new Color(1f, 0.6f, 0.1f);
-            label = new GUIStyle(GUI.skin.label) { fontSize = Size(26) };
-            label.normal.textColor = Color.white;
+            if (buttonTex == null)
+            {
+                buttonTex = Solid(new Color32(25, 31, 46, 255));
+                buttonHoverTex = Solid(new Color32(52, 64, 84, 255));
+                buttonActiveTex = Solid(new Color32(216, 117, 34, 255));
+                fieldTex = Solid(new Color32(10, 14, 24, 255));
+                panelTex = Solid(new Color32(12, 17, 28, 224));
+                shadeTex = Solid(new Color32(5, 8, 15, 218));
+            }
+            var uiFont = Font.CreateDynamicFontFromOSFont(new[] { "Lucida Console", "Consolas", "Courier New" }, Size(26));
+            title = new GUIStyle(GUI.skin.label) { font = uiFont, fontSize = Size(82), fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            title.normal.textColor = new Color32(242, 139, 48, 255);
+            label = new GUIStyle(GUI.skin.label) { font = uiFont, fontSize = Size(24) };
+            label.normal.textColor = new Color32(225, 230, 218, 255);
             center = new GUIStyle(label) { alignment = TextAnchor.MiddleCenter };
             big = new GUIStyle(center) { fontSize = Size(30), fontStyle = FontStyle.Bold };
-            button = new GUIStyle(GUI.skin.button) { fontSize = Size(32), fontStyle = FontStyle.Bold };
+            button = new GUIStyle(GUI.skin.button) { font = uiFont, fontSize = Size(28), fontStyle = FontStyle.Bold, border = new RectOffset(2, 2, 2, 2) };
+            button.normal.background = buttonTex;
+            button.hover.background = buttonHoverTex;
+            button.active.background = buttonActiveTex;
+            button.focused.background = buttonHoverTex;
+            button.normal.textColor = new Color32(234, 232, 207, 255);
+            button.hover.textColor = Color.white;
+            button.active.textColor = new Color32(15, 18, 27, 255);
             smallButton = new GUIStyle(GUI.skin.button) { fontSize = Size(22), fontStyle = FontStyle.Bold };
-            field = new GUIStyle(GUI.skin.textField) { fontSize = Size(28), alignment = TextAnchor.MiddleCenter };
+            smallButton.font = uiFont;
+            smallButton.normal.background = buttonTex;
+            smallButton.hover.background = buttonHoverTex;
+            smallButton.active.background = buttonActiveTex;
+            smallButton.normal.textColor = button.normal.textColor;
+            field = new GUIStyle(GUI.skin.textField) { font = uiFont, fontSize = Size(26), alignment = TextAnchor.MiddleCenter, padding = new RectOffset(12, 12, 8, 8) };
+            field.normal.background = fieldTex;
+            field.focused.background = fieldTex;
+            field.normal.textColor = new Color32(116, 223, 184, 255);
+            field.focused.textColor = Color.white;
             radioStyle = new GUIStyle(label) { fontSize = Size(24), fontStyle = FontStyle.Bold };
-            radioStyle.normal.textColor = new Color(0.55f, 1f, 0.6f); // handheld-radio green
+            radioStyle.normal.textColor = new Color32(116, 223, 184, 255);
             alert = new GUIStyle(label) { fontSize = Size(28), fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperRight };
-            alert.normal.textColor = new Color(1f, 0.75f, 0.2f);
-            mono = new GUIStyle(label) { font = Font.CreateDynamicFontFromOSFont(new[] { "Consolas", "Courier New" }, Size(26)), fontSize = Size(26) };
+            alert.normal.textColor = new Color32(255, 187, 55, 255);
+            mono = new GUIStyle(label) { font = uiFont, fontSize = Size(24) };
+            panelStyle = new GUIStyle(GUI.skin.box) { normal = { background = panelTex } };
+        }
+
+        static Texture2D Solid(Color32 color)
+        {
+            var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
+            texture.SetPixel(0, 0, color);
+            texture.Apply();
+            return texture;
         }
 
         void OnGUI()
@@ -138,7 +176,7 @@ namespace Turnaround.UI
             return new Rect((Screen.width - w * s) / 2f, y * s, w * s, h * s);
         }
 
-        void Shade() => GUI.Box(new Rect(0, 0, Screen.width, Screen.height), GUIContent.none);
+        void Shade() => GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), shadeTex);
 
         void DrawMainMenu()
         {
@@ -214,7 +252,7 @@ namespace Turnaround.UI
             float s = styleScale;
             float w = 820f * s, h = 800f * s;
             var panel = new Rect((Screen.width - w) / 2f, 30f * s, w, h);
-            GUI.Box(panel, GUIContent.none);
+            GUI.Box(panel, GUIContent.none, panelStyle);
             GUI.Label(new Rect(panel.x + 40f * s, panel.y + 20f * s, w - 80f * s, h - 40f * s), Turn.Report, mono);
             if (Net.IsServer)
             {
@@ -245,7 +283,7 @@ namespace Turnaround.UI
             {
                 string list = TaskList();
                 float h = (list.Split('\n').Length + 1) * 31f;
-                GUI.Box(new Rect(24 * s, 215 * s, 760 * s, h * s), GUIContent.none);
+                GUI.Box(new Rect(24 * s, 215 * s, 760 * s, h * s), GUIContent.none, panelStyle);
                 GUI.Label(new Rect(44 * s, 225 * s, 720 * s, h * s), list, label);
             }
 
@@ -264,7 +302,7 @@ namespace Turnaround.UI
             if (me.ThrowCharge > 0f)
             {
                 var bar = new Rect(cx - 150 * s, cy + 140 * s, 300 * s, 18 * s);
-                GUI.Box(bar, GUIContent.none);
+                GUI.Box(bar, GUIContent.none, panelStyle);
                 GUI.DrawTexture(new Rect(bar.x, bar.y, bar.width * me.ThrowCharge, bar.height), Texture2D.whiteTexture, ScaleMode.StretchToFill, false, 0f,
                     Color.Lerp(Color.yellow, Color.red, me.ThrowCharge), 0f, 0f);
             }
@@ -342,7 +380,7 @@ namespace Turnaround.UI
             var company = CompanyManager.Instance;
             var st = company != null ? company.State : null;
             var area = new Rect((Screen.width - 1300 * s) / 2f, 50 * s, 1300 * s, 980 * s);
-            GUI.Box(area, GUIContent.none);
+            GUI.Box(area, GUIContent.none, panelStyle);
             GUILayout.BeginArea(new Rect(area.x + 30 * s, area.y + 20 * s, area.width - 60 * s, area.height - 40 * s));
             if (st == null) GUILayout.Label("Connecting to head office...", big);
             else
